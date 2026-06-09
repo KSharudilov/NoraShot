@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from norashot.config import load_config
 from norashot.core.capture import ScreenshotService
 from norashot.core.clipboard import copy_image_to_clipboard, copy_text_to_clipboard
+from norashot.core.hotkeys import HotkeyManager
 from norashot.core.storage import save_image
 from norashot.logging_setup import setup_logging
 from norashot.ui.tray import TrayController
@@ -21,6 +22,7 @@ class NoraShotApplication:
         self.qt_app = QApplication(sys.argv)
         self.qt_app.setQuitOnLastWindowClosed(False)
         self.capture = ScreenshotService()
+        self.hotkeys = HotkeyManager()
         self.tray = TrayController(
             app=self.qt_app,
             config=self.config,
@@ -28,13 +30,28 @@ class NoraShotApplication:
             on_capture_fullscreen=self.capture_fullscreen,
             on_capture_active_window=self.capture_active_window,
         )
+        self.qt_app.aboutToQuit.connect(self.shutdown)
+        self.setup_hotkeys()
         logger.info("NoraShot application initialized")
+
+    def setup_hotkeys(self) -> None:
+        logger.info("Configuring global hotkeys")
+        self.hotkeys.register(self.config.hotkeys.area, self.capture_area)
+        self.hotkeys.register(self.config.hotkeys.fullscreen, self.capture_fullscreen)
+        self.hotkeys.register(self.config.hotkeys.active_window, self.capture_active_window)
+        self.hotkeys.register(self.config.hotkeys.settings, self.tray.open_settings)
+        self.hotkeys.start()
 
     def run(self) -> int:
         self.tray.show()
         self.tray.show_message("NoraShot", "Application started")
         logger.info("NoraShot event loop started")
         return self.qt_app.exec()
+
+    def shutdown(self) -> None:
+        logger.info("NoraShot shutdown started")
+        self.hotkeys.stop()
+        logger.info("NoraShot shutdown completed")
 
     def process_image(self, image) -> None:
         saved_path: Path | None = None
