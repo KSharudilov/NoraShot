@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 from loguru import logger
@@ -92,7 +94,8 @@ class ScreenshotEditor(QDialog):
     def copy_to_clipboard(self) -> None:
         try:
             copy_image_to_clipboard(self.image)
-            logger.info("Screenshot copied from editor")
+            logger.info("Screenshot copied from editor, closing editor")
+            self.close()
         except Exception:
             logger.exception("Failed to copy screenshot from editor")
             QMessageBox.critical(self, "NoraShot", "Не удалось скопировать скриншот в буфер.")
@@ -101,10 +104,24 @@ class ScreenshotEditor(QDialog):
         try:
             self.saved_path = save_image(self.image, self.save_config)
             logger.info("Screenshot saved from editor | path=" + str(self.saved_path))
-            QMessageBox.information(self, "NoraShot", "Скриншот сохранён:\n" + str(self.saved_path))
+            self.open_saved_file_folder()
+            self.close()
         except Exception:
             logger.exception("Failed to save screenshot from editor")
             QMessageBox.critical(self, "NoraShot", "Не удалось сохранить скриншот.")
+
+    def open_saved_file_folder(self) -> None:
+        if self.saved_path is None:
+            return
+
+        try:
+            if os.name == "nt":
+                subprocess.Popen(["explorer", "/select,", str(self.saved_path)])
+            else:
+                os.startfile(str(self.saved_path.parent))
+            logger.info("Opened saved screenshot folder | path=" + str(self.saved_path))
+        except Exception:
+            logger.exception("Failed to open saved screenshot folder")
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.closed.emit()
