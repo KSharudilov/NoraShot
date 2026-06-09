@@ -5,7 +5,7 @@ from pathlib import Path
 
 from loguru import logger
 from PySide6.QtCore import QObject, Qt
-from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QKeyEvent, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -62,10 +62,11 @@ class TrayPopupMenu(QDialog):
 
         self.setWindowTitle("NoraShot")
         self.setWindowFlags(
-            Qt.WindowType.Tool
+            Qt.WindowType.Popup
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFixedWidth(280)
 
         layout = QVBoxLayout()
@@ -93,6 +94,12 @@ class TrayPopupMenu(QDialog):
         button.setMinimumHeight(30)
         button.clicked.connect(callback)
         return button
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+            return
+        super().keyPressEvent(event)
 
     def capture_area(self) -> None:
         self.close()
@@ -175,11 +182,37 @@ class TrayController(QObject):
             on_show_about=self.show_about,
             on_exit=self.exit,
         )
-        cursor_pos = QCursor.pos()
-        self.popup_menu.move(cursor_pos.x() - 10, cursor_pos.y() - 10)
+        self.popup_menu.adjustSize()
+        self.move_popup_near_cursor(self.popup_menu)
         self.popup_menu.show()
         self.popup_menu.raise_()
         self.popup_menu.activateWindow()
+        self.popup_menu.setFocus()
+
+    def move_popup_near_cursor(self, popup: TrayPopupMenu) -> None:
+        cursor_pos = QCursor.pos()
+        screen = QApplication.screenAt(cursor_pos) or QApplication.primaryScreen()
+        available = screen.availableGeometry()
+
+        width = popup.width()
+        height = popup.height()
+        margin = 8
+
+        x = cursor_pos.x() - width + 24
+        y = cursor_pos.y() - height - margin
+
+        if y < available.top():
+            y = cursor_pos.y() + margin
+
+        if x < available.left():
+            x = available.left() + margin
+        if x + width > available.right():
+            x = available.right() - width - margin
+        if y + height > available.bottom():
+            y = available.bottom() - height - margin
+
+        popup.move(x, y)
+        logger.info("Tray popup moved | x=" + str(x) + " | y=" + str(y))
 
     def open_settings(self) -> None:
         logger.info("Opening settings window")
