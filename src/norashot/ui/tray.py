@@ -5,11 +5,10 @@ from pathlib import Path
 
 from loguru import logger
 from PySide6.QtCore import QObject, Qt
-from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QKeyEvent, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
-    QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -62,8 +61,13 @@ class TrayPopupMenu(QDialog):
         self.on_exit = on_exit
 
         self.setWindowTitle("NoraShot")
-        self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
-        self.setMinimumWidth(300)
+        self.setWindowFlags(
+            Qt.WindowType.Popup
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFixedWidth(280)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
@@ -81,15 +85,7 @@ class TrayPopupMenu(QDialog):
         layout.addWidget(self.make_button("Открыть папку скриншотов", self.open_folder))
         layout.addWidget(self.make_button("Настройки", self.open_settings))
         layout.addWidget(self.make_button("О программе", self.show_about))
-
-        bottom_layout = QHBoxLayout()
-        close_button = QPushButton("Закрыть меню")
-        exit_button = QPushButton("Выход из NoraShot")
-        close_button.clicked.connect(self.close)
-        exit_button.clicked.connect(self.exit_app)
-        bottom_layout.addWidget(close_button)
-        bottom_layout.addWidget(exit_button)
-        layout.addLayout(bottom_layout)
+        layout.addWidget(self.make_button("Выход", self.exit_app))
 
         self.setLayout(layout)
 
@@ -98,6 +94,12 @@ class TrayPopupMenu(QDialog):
         button.setMinimumHeight(30)
         button.clicked.connect(callback)
         return button
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+            return
+        super().keyPressEvent(event)
 
     def capture_area(self) -> None:
         self.close()
@@ -166,7 +168,7 @@ class TrayController(QObject):
             logger.info("Tray notification shown")
 
     def show_tray_menu(self) -> None:
-        logger.info("Opening NoraShot tray menu window")
+        logger.info("Opening custom tray popup menu")
         if self.popup_menu is not None:
             self.popup_menu.close()
             self.popup_menu = None
@@ -185,6 +187,7 @@ class TrayController(QObject):
         self.popup_menu.show()
         self.popup_menu.raise_()
         self.popup_menu.activateWindow()
+        self.popup_menu.setFocus()
 
     def move_popup_near_cursor(self, popup: TrayPopupMenu) -> None:
         cursor_pos = QCursor.pos()
@@ -193,9 +196,9 @@ class TrayController(QObject):
 
         width = popup.width()
         height = popup.height()
-        margin = 12
+        margin = 8
 
-        x = cursor_pos.x() - width + 30
+        x = cursor_pos.x() - width + 24
         y = cursor_pos.y() - height - margin
 
         if y < available.top():
@@ -209,7 +212,7 @@ class TrayController(QObject):
             y = available.bottom() - height - margin
 
         popup.move(x, y)
-        logger.info("Tray menu window moved | x=" + str(x) + " | y=" + str(y))
+        logger.info("Tray popup moved | x=" + str(x) + " | y=" + str(y))
 
     def open_settings(self) -> None:
         logger.info("Opening settings window")
