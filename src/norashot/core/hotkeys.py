@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
-from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication
+from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication, QObject, Signal
 
 WM_HOTKEY = 0x0312
 WM_KEYDOWN = 0x0100
@@ -102,6 +102,10 @@ kernel32.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
 kernel32.GetModuleHandleW.restype = ctypes.c_void_p
 
 
+class HotkeySignalBridge(QObject):
+    triggered = Signal(int)
+
+
 @dataclass
 class HotkeyBinding:
     hotkey_id: int
@@ -124,6 +128,8 @@ class HotkeyManager(QAbstractNativeEventFilter):
         self._hook_thread: threading.Thread | None = None
         self._hook_thread_id = 0
         self._hook_callback = None
+        self._bridge = HotkeySignalBridge()
+        self._bridge.triggered.connect(self._execute_binding_in_qt_thread)
 
     def register(self, hotkey: str, callback: Callable[[], None]) -> None:
         normalized = self._normalize_hotkey(hotkey)
@@ -216,7 +222,7 @@ class HotkeyManager(QAbstractNativeEventFilter):
             return False, 0
 
         logger.info("Hotkey triggered by RegisterHotKey | id=" + str(hotkey_id) + " | hotkey=" + binding.normalized)
-        self._call_binding(binding)
+        self._bridge.triggered.emit(hotkey_id)
         return True, 0
 
     def _start_keyboard_hook(self) -> None:
@@ -280,8 +286,19 @@ class HotkeyManager(QAbstractNativeEventFilter):
                 logger.info("PrintScreen hook ignored because RegisterHotKey owns this hotkey | hotkey=" + binding.normalized)
                 return
             logger.info("Hotkey triggered by keyboard hook | id=" + str(binding.hotkey_id) + " | hotkey=" + binding.normalized)
-            self._call_binding(binding)
+            self._bridge.triggered.emit(binding.hotkey_id)
             return
+
+    def _execute_binding_in_qt_thread(self, hotkey_id: int) -> None:
+        binding = self._bindings.get(hotkey_id)
+        if binding is None:
+            logger.warning("Cannot execute unknown hotkey | id=" + str(hotkey_id))
+            return
+        logger.info("Executing hotkey callback in Qt thread | id=" + str(hotkey_id) + " | hotkey=" + binding.normalized)
+        try:
+            binding.callback()
+        except Exception:
+            logger.exception("Hotkey callback failed | hotkey=" + binding.normalized)
 
     def _current_modifiers(self) -> int:
         modifiers = 0
@@ -296,12 +313,6 @@ class HotkeyManager(QAbstractNativeEventFilter):
         if user32.GetAsyncKeyState(VK_RWIN) & 0x8000:
             modifiers |= MOD_WIN
         return modifiers
-
-    def _call_binding(self, binding: HotkeyBinding) -> None:
-        try:
-            binding.callback()
-        except Exception:
-            logger.exception("Hotkey callback failed | hotkey=" + binding.normalized)
 
     def _normalize_hotkey(self, hotkey: str) -> str:
         value = hotkey.strip().lower()
