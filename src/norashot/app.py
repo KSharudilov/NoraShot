@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from loguru import logger
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from norashot.config import load_config
 from norashot.core.capture import Region, ScreenshotService
-from norashot.core.clipboard import copy_image_to_clipboard, copy_text_to_clipboard
 from norashot.core.hotkeys import HotkeyManager
-from norashot.core.storage import save_image
 from norashot.logging_setup import setup_logging
+from norashot.ui.editor import ScreenshotEditor
 from norashot.ui.selector import RegionSelector
 from norashot.ui.tray import TrayController
 
@@ -25,6 +23,7 @@ class NoraShotApplication:
         self.capture = ScreenshotService()
         self.hotkeys = HotkeyManager()
         self.selector: RegionSelector | None = None
+        self.editors: list[ScreenshotEditor] = []
         self.tray = TrayController(
             app=self.qt_app,
             config=self.config,
@@ -54,18 +53,19 @@ class NoraShotApplication:
         self.hotkeys.stop()
         logger.info("NoraShot shutdown completed")
 
-    def process_image(self, image) -> None:
-        saved_path: Path | None = None
-        if self.config.save.enabled:
-            saved_path = save_image(image, self.config.save)
-        if self.config.clipboard.copy_image:
-            copy_image_to_clipboard(image)
-        if self.config.clipboard.copy_file_path and saved_path:
-            copy_text_to_clipboard(str(saved_path))
-        if saved_path:
-            self.tray.show_message("NoraShot", "Screenshot saved: " + saved_path.name)
-        else:
-            self.tray.show_message("NoraShot", "Screenshot copied to clipboard")
+    def open_editor(self, image) -> None:
+        editor = ScreenshotEditor(image=image, save_config=self.config.save)
+        editor.closed.connect(lambda: self.remove_editor(editor))
+        self.editors.append(editor)
+        editor.show()
+        editor.raise_()
+        editor.activateWindow()
+        logger.info("Screenshot sent to editor")
+
+    def remove_editor(self, editor: ScreenshotEditor) -> None:
+        if editor in self.editors:
+            self.editors.remove(editor)
+        logger.info("Screenshot editor closed")
 
     def capture_area(self) -> None:
         logger.info("Area screenshot requested")
@@ -92,7 +92,7 @@ class NoraShotApplication:
         )
         try:
             image = self.capture.capture_region(Region(left=left, top=top, width=width, height=height))
-            self.process_image(image)
+            self.open_editor(image)
         except Exception:
             logger.exception("Selected region screenshot failed")
             QMessageBox.critical(None, "NoraShot", "Failed to capture selected region. Check logs.")
@@ -101,7 +101,7 @@ class NoraShotApplication:
         logger.info("Fullscreen screenshot requested")
         try:
             image = self.capture.capture_fullscreen()
-            self.process_image(image)
+            self.open_editor(image)
         except Exception:
             logger.exception("Fullscreen screenshot failed")
             QMessageBox.critical(None, "NoraShot", "Failed to create screenshot. Check logs.")
@@ -113,7 +113,7 @@ class NoraShotApplication:
             if image is None:
                 QMessageBox.warning(None, "NoraShot", "Could not capture active window.")
                 return
-            self.process_image(image)
+            self.open_editor(image)
         except Exception:
             logger.exception("Active window screenshot failed")
             QMessageBox.critical(None, "NoraShot", "Failed to capture active window. Check logs.")
