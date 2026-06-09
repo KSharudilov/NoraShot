@@ -111,6 +111,7 @@ class HotkeyBinding:
     vk_code: int
     callback: Callable[[], None]
     register_ok: bool = False
+    use_register_hotkey: bool = False
 
 
 class HotkeyManager(QAbstractNativeEventFilter):
@@ -129,6 +130,7 @@ class HotkeyManager(QAbstractNativeEventFilter):
         modifiers, vk_code = self._parse_hotkey(normalized)
         hotkey_id = self._next_id
         self._next_id += 1
+        use_register_hotkey = normalized == "ctrl+print screen"
         self._bindings[hotkey_id] = HotkeyBinding(
             hotkey_id=hotkey_id,
             source=hotkey,
@@ -136,8 +138,9 @@ class HotkeyManager(QAbstractNativeEventFilter):
             modifiers=modifiers,
             vk_code=vk_code,
             callback=callback,
+            use_register_hotkey=use_register_hotkey,
         )
-        logger.info("Hotkey queued | id=" + str(hotkey_id) + " | source=" + hotkey + " | normalized=" + normalized)
+        logger.info("Hotkey queued | id=" + str(hotkey_id) + " | source=" + hotkey + " | normalized=" + normalized + " | register=" + str(use_register_hotkey))
 
     def start(self) -> None:
         if sys.platform != "win32":
@@ -156,6 +159,9 @@ class HotkeyManager(QAbstractNativeEventFilter):
         logger.info("Starting native Windows hotkey manager")
 
         for binding in self._bindings.values():
+            if not binding.use_register_hotkey:
+                logger.info("Hotkey will be handled by keyboard hook only | id=" + str(binding.hotkey_id) + " | hotkey=" + binding.normalized)
+                continue
             flags = binding.modifiers | MOD_NOREPEAT
             ctypes.set_last_error(0)
             result = user32.RegisterHotKey(None, binding.hotkey_id, flags, binding.vk_code)
