@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "norashot"
+version = "0.1.0"
+description = "Windows screenshot tool with editor, clipboard, local save and private upload support."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "NoraShot contributors" }
+]
+dependencies = [
+    "PySide6>=6.7.0",
+    "Pillow>=10.0.0",
+    "mss>=9.0.0",
+    "PyYAML>=6.0.0",
+    "loguru>=0.7.0",
+    "platformdirs>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+    "pyinstaller>=6.0.0",
+]
+
+[project.scripts]
+norashot = "norashot.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
