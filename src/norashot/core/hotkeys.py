@@ -45,6 +45,9 @@ MODIFIER_ALIASES = {
     "windows": MOD_WIN,
 }
 
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
 
 class POINT(ctypes.Structure):
     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
@@ -71,6 +74,34 @@ class KBDLLHOOKSTRUCT(ctypes.Structure):
     ]
 
 
+LowLevelKeyboardProc = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, ctypes.c_size_t, ctypes.c_void_p)
+
+user32.RegisterHotKey.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint]
+user32.RegisterHotKey.restype = ctypes.c_bool
+user32.UnregisterHotKey.argtypes = [ctypes.c_void_p, ctypes.c_int]
+user32.UnregisterHotKey.restype = ctypes.c_bool
+user32.SetWindowsHookExW.argtypes = [ctypes.c_int, LowLevelKeyboardProc, ctypes.c_void_p, ctypes.c_uint]
+user32.SetWindowsHookExW.restype = ctypes.c_void_p
+user32.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t, ctypes.c_void_p]
+user32.CallNextHookEx.restype = ctypes.c_long
+user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
+user32.UnhookWindowsHookEx.restype = ctypes.c_bool
+user32.GetMessageW.argtypes = [ctypes.POINTER(MSG), ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint]
+user32.GetMessageW.restype = ctypes.c_int
+user32.TranslateMessage.argtypes = [ctypes.POINTER(MSG)]
+user32.TranslateMessage.restype = ctypes.c_bool
+user32.DispatchMessageW.argtypes = [ctypes.POINTER(MSG)]
+user32.DispatchMessageW.restype = ctypes.c_void_p
+user32.PostThreadMessageW.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_size_t, ctypes.c_size_t]
+user32.PostThreadMessageW.restype = ctypes.c_bool
+user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+user32.GetAsyncKeyState.restype = ctypes.c_short
+kernel32.GetCurrentThreadId.argtypes = []
+kernel32.GetCurrentThreadId.restype = ctypes.c_uint
+kernel32.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
+kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+
+
 @dataclass
 class HotkeyBinding:
     hotkey_id: int
@@ -80,9 +111,6 @@ class HotkeyBinding:
     vk_code: int
     callback: Callable[[], None]
     register_ok: bool = False
-
-
-LowLevelKeyboardProc = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, ctypes.c_size_t, ctypes.c_void_p)
 
 
 class HotkeyManager(QAbstractNativeEventFilter):
@@ -129,7 +157,8 @@ class HotkeyManager(QAbstractNativeEventFilter):
 
         for binding in self._bindings.values():
             flags = binding.modifiers | MOD_NOREPEAT
-            result = ctypes.windll.user32.RegisterHotKey(None, binding.hotkey_id, flags, binding.vk_code)
+            ctypes.set_last_error(0)
+            result = user32.RegisterHotKey(None, binding.hotkey_id, flags, binding.vk_code)
             if result:
                 binding.register_ok = True
                 logger.info("Hotkey registered successfully | id=" + str(binding.hotkey_id) + " | hotkey=" + binding.normalized)
@@ -150,7 +179,7 @@ class HotkeyManager(QAbstractNativeEventFilter):
                 if not binding.register_ok:
                     continue
                 try:
-                    ctypes.windll.user32.UnregisterHotKey(None, binding.hotkey_id)
+                    user32.UnregisterHotKey(None, binding.hotkey_id)
                     logger.info("Hotkey unregistered | id=" + str(binding.hotkey_id) + " | hotkey=" + binding.normalized)
                 except Exception:
                     logger.exception("Failed to unregister hotkey | id=" + str(binding.hotkey_id))
@@ -187,7 +216,6 @@ class HotkeyManager(QAbstractNativeEventFilter):
     def _start_keyboard_hook(self) -> None:
         if self._hook_thread is not None:
             return
-
         logger.info("Starting low level keyboard hook for PrintScreen combinations")
         self._hook_thread = threading.Thread(target=self._keyboard_hook_loop, daemon=True)
         self._hook_thread.start()
@@ -195,33 +223,32 @@ class HotkeyManager(QAbstractNativeEventFilter):
     def _stop_keyboard_hook(self) -> None:
         if self._hook_thread_id:
             try:
-                ctypes.windll.user32.PostThreadMessageW(self._hook_thread_id, WM_QUIT, 0, 0)
+                user32.PostThreadMessageW(self._hook_thread_id, WM_QUIT, 0, 0)
             except Exception:
                 logger.exception("Failed to stop keyboard hook thread")
         self._hook_thread = None
         self._hook_thread_id = 0
 
     def _keyboard_hook_loop(self) -> None:
-        self._hook_thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
+        self._hook_thread_id = kernel32.GetCurrentThreadId()
         self._hook_callback = LowLevelKeyboardProc(self._low_level_keyboard_proc)
-        self._hook_handle = ctypes.windll.user32.SetWindowsHookExW(
-            WH_KEYBOARD_LL,
-            self._hook_callback,
-            ctypes.windll.kernel32.GetModuleHandleW(None),
-            0,
-        )
+        module_handle = kernel32.GetModuleHandleW(None)
+
+        ctypes.set_last_error(0)
+        self._hook_handle = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._hook_callback, module_handle, 0)
         if not self._hook_handle:
-            logger.error("Failed to install low level keyboard hook")
+            error_code = ctypes.get_last_error()
+            logger.error("Failed to install low level keyboard hook | error=" + str(error_code))
             return
 
         logger.info("Low level keyboard hook installed | thread_id=" + str(self._hook_thread_id))
         msg = MSG()
-        while ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-            ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
-            ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
 
         try:
-            ctypes.windll.user32.UnhookWindowsHookEx(self._hook_handle)
+            user32.UnhookWindowsHookEx(self._hook_handle)
             logger.info("Low level keyboard hook removed")
         except Exception:
             logger.exception("Failed to remove low level keyboard hook")
@@ -232,8 +259,7 @@ class HotkeyManager(QAbstractNativeEventFilter):
             event = ctypes.cast(l_param, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
             if event.vkCode == VK_SNAPSHOT:
                 self._handle_print_screen_hook_event()
-
-        return ctypes.windll.user32.CallNextHookEx(self._hook_handle, n_code, w_param, l_param)
+        return user32.CallNextHookEx(self._hook_handle, n_code, w_param, l_param)
 
     def _handle_print_screen_hook_event(self) -> None:
         modifiers = self._current_modifiers()
@@ -247,22 +273,21 @@ class HotkeyManager(QAbstractNativeEventFilter):
             if binding.register_ok:
                 logger.info("PrintScreen hook ignored because RegisterHotKey owns this hotkey | hotkey=" + binding.normalized)
                 return
-
             logger.info("Hotkey triggered by keyboard hook | id=" + str(binding.hotkey_id) + " | hotkey=" + binding.normalized)
             self._call_binding(binding)
             return
 
     def _current_modifiers(self) -> int:
         modifiers = 0
-        if ctypes.windll.user32.GetAsyncKeyState(VK_MENU) & 0x8000:
+        if user32.GetAsyncKeyState(VK_MENU) & 0x8000:
             modifiers |= MOD_ALT
-        if ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000:
+        if user32.GetAsyncKeyState(VK_CONTROL) & 0x8000:
             modifiers |= MOD_CONTROL
-        if ctypes.windll.user32.GetAsyncKeyState(VK_SHIFT) & 0x8000:
+        if user32.GetAsyncKeyState(VK_SHIFT) & 0x8000:
             modifiers |= MOD_SHIFT
-        if ctypes.windll.user32.GetAsyncKeyState(VK_LWIN) & 0x8000:
+        if user32.GetAsyncKeyState(VK_LWIN) & 0x8000:
             modifiers |= MOD_WIN
-        if ctypes.windll.user32.GetAsyncKeyState(VK_RWIN) & 0x8000:
+        if user32.GetAsyncKeyState(VK_RWIN) & 0x8000:
             modifiers |= MOD_WIN
         return modifiers
 
