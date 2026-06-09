@@ -7,11 +7,12 @@ from loguru import logger
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from norashot.config import load_config
-from norashot.core.capture import ScreenshotService
+from norashot.core.capture import Region, ScreenshotService
 from norashot.core.clipboard import copy_image_to_clipboard, copy_text_to_clipboard
 from norashot.core.hotkeys import HotkeyManager
 from norashot.core.storage import save_image
 from norashot.logging_setup import setup_logging
+from norashot.ui.selector import RegionSelector
 from norashot.ui.tray import TrayController
 
 
@@ -23,6 +24,7 @@ class NoraShotApplication:
         self.qt_app.setQuitOnLastWindowClosed(False)
         self.capture = ScreenshotService()
         self.hotkeys = HotkeyManager()
+        self.selector: RegionSelector | None = None
         self.tray = TrayController(
             app=self.qt_app,
             config=self.config,
@@ -67,8 +69,33 @@ class NoraShotApplication:
 
     def capture_area(self) -> None:
         logger.info("Area screenshot requested")
-        QMessageBox.information(None, "NoraShot", "Region selector will be added in the next stage.")
-        self.capture_fullscreen()
+        try:
+            if self.selector is not None and self.selector.isVisible():
+                self.selector.raise_()
+                self.selector.activateWindow()
+                return
+
+            self.selector = RegionSelector()
+            self.selector.region_selected.connect(self.capture_selected_region)
+            self.selector.canceled.connect(lambda: logger.info("Region selection canceled"))
+            self.selector.show_selector()
+        except Exception:
+            logger.exception("Region selector failed")
+            QMessageBox.critical(None, "NoraShot", "Failed to start region selector. Check logs.")
+
+    def capture_selected_region(self, left: int, top: int, width: int, height: int) -> None:
+        logger.info(
+            "Selected region capture requested | left=" + str(left)
+            + " | top=" + str(top)
+            + " | width=" + str(width)
+            + " | height=" + str(height)
+        )
+        try:
+            image = self.capture.capture_region(Region(left=left, top=top, width=width, height=height))
+            self.process_image(image)
+        except Exception:
+            logger.exception("Selected region screenshot failed")
+            QMessageBox.critical(None, "NoraShot", "Failed to capture selected region. Check logs.")
 
     def capture_fullscreen(self) -> None:
         logger.info("Fullscreen screenshot requested")
