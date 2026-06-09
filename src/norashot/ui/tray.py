@@ -4,70 +4,192 @@ import os
 from pathlib import Path
 
 from loguru import logger
-from PySide6.QtCore import QObject
-from PySide6.QtGui import QAction, QIcon
-from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
+from PySide6.QtCore import QObject, Qt
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSystemTrayIcon,
+    QVBoxLayout,
+    QWidget,
+)
 
 from norashot.config import NoraShotConfig
 from norashot.paths import get_default_screenshot_dir
 from norashot.ui.settings_window import SettingsWindow
 
 
+def create_default_icon() -> QIcon:
+    pixmap = QPixmap(64, 64)
+    pixmap.fill(QColor("#2d89ef"))
+
+    painter = QPainter(pixmap)
+    painter.setPen(QColor("white"))
+
+    font = QFont("Segoe UI", 26)
+    font.setBold(True)
+    painter.setFont(font)
+
+    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "N")
+    painter.end()
+
+    return QIcon(pixmap)
+
+
+class TrayPopupMenu(QDialog):
+    def __init__(
+        self,
+        on_capture_area,
+        on_capture_fullscreen,
+        on_capture_active_window,
+        on_open_folder,
+        on_open_settings,
+        on_show_about,
+        on_exit,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.on_capture_area = on_capture_area
+        self.on_capture_fullscreen = on_capture_fullscreen
+        self.on_capture_active_window = on_capture_active_window
+        self.on_open_folder = on_open_folder
+        self.on_open_settings = on_open_settings
+        self.on_show_about = on_show_about
+        self.on_exit = on_exit
+
+        self.setWindowTitle("NoraShot")
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setFixedWidth(280)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
+
+        title = QLabel("NoraShot")
+        title_font = QFont("Segoe UI", 10)
+        title_font.setBold(True)
+        title.setFont(title_font)
+
+        layout.addWidget(title)
+        layout.addWidget(self.make_button("Скриншот области", self.capture_area))
+        layout.addWidget(self.make_button("Скриншот всего экрана", self.capture_fullscreen))
+        layout.addWidget(self.make_button("Скриншот активного окна", self.capture_active_window))
+        layout.addWidget(self.make_button("Открыть папку скриншотов", self.open_folder))
+        layout.addWidget(self.make_button("Настройки", self.open_settings))
+        layout.addWidget(self.make_button("О программе", self.show_about))
+        layout.addWidget(self.make_button("Выход", self.exit_app))
+
+        self.setLayout(layout)
+
+    def make_button(self, text: str, callback) -> QPushButton:
+        button = QPushButton(text)
+        button.setMinimumHeight(30)
+        button.clicked.connect(callback)
+        return button
+
+    def capture_area(self) -> None:
+        self.close()
+        self.on_capture_area()
+
+    def capture_fullscreen(self) -> None:
+        self.close()
+        self.on_capture_fullscreen()
+
+    def capture_active_window(self) -> None:
+        self.close()
+        self.on_capture_active_window()
+
+    def open_folder(self) -> None:
+        self.close()
+        self.on_open_folder()
+
+    def open_settings(self) -> None:
+        self.close()
+        self.on_open_settings()
+
+    def show_about(self) -> None:
+        self.close()
+        self.on_show_about()
+
+    def exit_app(self) -> None:
+        self.close()
+        self.on_exit()
+
+
 class TrayController(QObject):
-    def __init__(self, app: QApplication, config: NoraShotConfig, on_capture_area, on_capture_fullscreen, on_capture_active_window) -> None:
+    def __init__(
+        self,
+        app: QApplication,
+        config: NoraShotConfig,
+        on_capture_area,
+        on_capture_fullscreen,
+        on_capture_active_window,
+    ) -> None:
         super().__init__()
         self.app = app
         self.config = config
         self.on_capture_area = on_capture_area
         self.on_capture_fullscreen = on_capture_fullscreen
         self.on_capture_active_window = on_capture_active_window
-        self.settings_window = None
+        self.settings_window: SettingsWindow | None = None
+        self.popup_menu: TrayPopupMenu | None = None
+
         self.tray = QSystemTrayIcon()
-        self.tray.setIcon(QIcon())
+        self.tray.setIcon(create_default_icon())
         self.tray.setToolTip("NoraShot")
-        self.menu = QMenu()
-        self.build_menu()
-        self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(self.on_activated)
 
-    def build_menu(self) -> None:
-        action_area = QAction("Region screenshot")
-        action_fullscreen = QAction("Fullscreen screenshot")
-        action_active_window = QAction("Active window screenshot")
-        action_open_folder = QAction("Open screenshots folder")
-        action_settings = QAction("Settings")
-        action_about = QAction("About")
-        action_exit = QAction("Exit")
-        action_area.triggered.connect(self.on_capture_area)
-        action_fullscreen.triggered.connect(self.on_capture_fullscreen)
-        action_active_window.triggered.connect(self.on_capture_active_window)
-        action_open_folder.triggered.connect(self.open_screenshot_folder)
-        action_settings.triggered.connect(self.open_settings)
-        action_about.triggered.connect(self.show_about)
-        action_exit.triggered.connect(self.exit)
-        self.menu.addAction(action_area)
-        self.menu.addAction(action_fullscreen)
-        self.menu.addAction(action_active_window)
-        self.menu.addSeparator()
-        self.menu.addAction(action_open_folder)
-        self.menu.addAction(action_settings)
-        self.menu.addSeparator()
-        self.menu.addAction(action_about)
-        self.menu.addAction(action_exit)
-
     def show(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            logger.warning("System tray is not available on this system")
+            QMessageBox.warning(None, "NoraShot", "Системный трей недоступен.")
+            return
+
         self.tray.show()
         logger.info("Tray icon shown")
 
     def show_message(self, title: str, message: str) -> None:
-        if self.config.app.show_notifications:
+        if self.config.app.show_notifications and self.tray.isVisible():
             self.tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 3000)
             logger.info("Tray notification shown")
 
+    def show_tray_menu(self) -> None:
+        logger.info("Opening custom tray popup menu")
+        if self.popup_menu is not None:
+            self.popup_menu.close()
+            self.popup_menu = None
+
+        self.popup_menu = TrayPopupMenu(
+            on_capture_area=self.on_capture_area,
+            on_capture_fullscreen=self.on_capture_fullscreen,
+            on_capture_active_window=self.on_capture_active_window,
+            on_open_folder=self.open_screenshot_folder,
+            on_open_settings=self.open_settings,
+            on_show_about=self.show_about,
+            on_exit=self.exit,
+        )
+        cursor_pos = QCursor.pos()
+        self.popup_menu.move(cursor_pos.x() - 10, cursor_pos.y() - 10)
+        self.popup_menu.show()
+        self.popup_menu.raise_()
+        self.popup_menu.activateWindow()
+
     def open_settings(self) -> None:
         logger.info("Opening settings window")
+        if self.settings_window is not None and self.settings_window.isVisible():
+            self.settings_window.raise_()
+            self.settings_window.activateWindow()
+            return
+
         self.settings_window = SettingsWindow(self.config)
-        self.settings_window.config_saved.connect(lambda: self.show_message("NoraShot", "Settings saved"))
+        self.settings_window.config_saved.connect(lambda: self.show_message("NoraShot", "Настройки сохранены"))
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()
@@ -79,11 +201,21 @@ class TrayController(QObject):
         os.startfile(str(folder))
 
     def show_about(self) -> None:
-        QMessageBox.information(None, "About NoraShot", "NoraShot 0.1.0-dev")
+        QMessageBox.information(None, "О программе NoraShot", "NoraShot 0.1.0-dev")
 
     def on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        logger.info("Tray activated | reason=" + str(reason))
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.Context,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self.show_tray_menu()
+            return
+
+        if reason == QSystemTrayIcon.ActivationReason.MiddleClick:
             self.open_settings()
+            return
 
     def exit(self) -> None:
         logger.info("Exiting NoraShot from tray menu")
