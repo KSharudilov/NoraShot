@@ -35,11 +35,10 @@ class NoraShotApplication:
         logger.info("NoraShot application initialized")
 
     def setup_hotkeys(self) -> None:
-        logger.info("Configuring global hotkeys")
+        logger.info("Configuring screenshot hotkeys")
         self.hotkeys.register(self.config.hotkeys.area, self.capture_area)
         self.hotkeys.register(self.config.hotkeys.fullscreen, self.capture_fullscreen)
         self.hotkeys.register(self.config.hotkeys.active_window, self.capture_active_window)
-        self.hotkeys.register(self.config.hotkeys.settings, self.tray.open_settings)
         self.hotkeys.start()
 
     def run(self) -> int:
@@ -82,7 +81,15 @@ class NoraShotApplication:
 
     def capture_active_window(self) -> None:
         logger.info("Active window screenshot requested")
-        QMessageBox.information(None, "NoraShot", "Active window screenshot will be added later.")
+        try:
+            image = self.capture.capture_active_window()
+            if image is None:
+                QMessageBox.warning(None, "NoraShot", "Could not capture active window.")
+                return
+            self.process_image(image)
+        except Exception:
+            logger.exception("Active window screenshot failed")
+            QMessageBox.critical(None, "NoraShot", "Failed to capture active window. Check logs.")
 
 
 def main() -> None:
