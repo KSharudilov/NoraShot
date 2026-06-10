@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QMouseEvent, QPixmap
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -35,6 +36,14 @@ class ArrowAnnotation:
     end_y: int
 
 
+@dataclass
+class RectangleAnnotation:
+    left: int
+    top: int
+    right: int
+    bottom: int
+
+
 class ImageCanvas(QLabel):
     changed = Signal()
 
@@ -42,9 +51,10 @@ class ImageCanvas(QLabel):
         super().__init__(parent)
         self.image = image.copy().convert("RGBA")
         self.tool = "none"
-        self.arrow_start: QPoint | None = None
-        self.arrow_end: QPoint | None = None
-        self.annotations: list[ArrowAnnotation] = []
+        self.drag_start: QPoint | None = None
+        self.drag_end: QPoint | None = None
+        self.arrows: list[ArrowAnnotation] = []
+        self.rectangles: list[RectangleAnnotation] = []
 
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -54,10 +64,13 @@ class ImageCanvas(QLabel):
 
     def set_tool(self, tool: str) -> None:
         self.tool = tool
-        if tool == "arrow":
+        self.drag_start = None
+        self.drag_end = None
+        if tool in ("arrow", "rectangle"):
             self.setCursor(Qt.CursorShape.CrossCursor)
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.update_preview()
         logger.info("Editor tool selected | tool=" + tool)
 
     def update_preview(self) -> None:
@@ -71,28 +84,29 @@ class ImageCanvas(QLabel):
         result = self.image.copy()
         draw = ImageDraw.Draw(result)
 
-        for annotation in self.annotations:
-            self.draw_arrow(
-                draw,
-                annotation.start_x,
-                annotation.start_y,
-                annotation.end_x,
-                annotation.end_y,
-            )
+        for arrow in self.arrows:
+            self.draw_arrow(draw, arrow.start_x, arrow.start_y, arrow.end_x, arrow.end_y)
 
-        if include_temp and self.arrow_start is not None and self.arrow_end is not None:
-            self.draw_arrow(
-                draw,
-                self.arrow_start.x(),
-                self.arrow_start.y(),
-                self.arrow_end.x(),
-                self.arrow_end.y(),
-            )
+        for rectangle in self.rectangles:
+            self.draw_rectangle(draw, rectangle.left, rectangle.top, rectangle.right, rectangle.bottom)
+
+        if include_temp and self.drag_start is not None and self.drag_end is not None:
+            if self.tool == "arrow":
+                self.draw_arrow(
+                    draw,
+                    self.drag_start.x(),
+                    self.drag_start.y(),
+                    self.drag_end.x(),
+                    self.drag_end.y(),
+                )
+            if self.tool == "rectangle":
+                left, top, right, bottom = self.normalized_rect_points(self.drag_start, self.drag_end)
+                self.draw_rectangle(draw, left, top, right, bottom)
 
         return result.convert("RGB")
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self.tool != "arrow":
+        if self.tool not in ("arrow", "rectangle"):
             return
         if event.button() != Qt.MouseButton.LeftButton:
             return
@@ -101,54 +115,61 @@ class ImageCanvas(QLabel):
         if not self.point_inside_image(point):
             return
 
-        self.arrow_start = point
-        self.arrow_end = point
+        self.drag_start = point
+        self.drag_end = point
         self.update_preview()
-        logger.info("Arrow drawing started")
+        logger.info("Drawing started | tool=" + self.tool)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self.tool != "arrow":
+        if self.tool not in ("arrow", "rectangle"):
             return
-        if self.arrow_start is None:
+        if self.drag_start is None:
             return
 
         point = event.position().toPoint()
-        self.arrow_end = self.clamp_point_to_image(point)
+        self.drag_end = self.clamp_point_to_image(point)
         self.update_preview()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self.tool != "arrow":
+        if self.tool not in ("arrow", "rectangle"):
             return
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        if self.arrow_start is None or self.arrow_end is None:
+        if self.drag_start is None or self.drag_end is None:
             return
 
         end_point = self.clamp_point_to_image(event.position().toPoint())
-        dx = end_point.x() - self.arrow_start.x()
-        dy = end_point.y() - self.arrow_start.y()
+        dx = end_point.x() - self.drag_start.x()
+        dy = end_point.y() - self.drag_start.y()
 
         if abs(dx) < 4 and abs(dy) < 4:
-            logger.info("Arrow drawing ignored because arrow is too small")
-            self.arrow_start = None
-            self.arrow_end = None
-            self.update_preview()
+            logger.info("Drawing ignored because selected object is too small")
+            self.clear_drag()
             return
 
-        self.annotations.append(
-            ArrowAnnotation(
-                start_x=self.arrow_start.x(),
-                start_y=self.arrow_start.y(),
-                end_x=end_point.x(),
-                end_y=end_point.y(),
+        if self.tool == "arrow":
+            self.arrows.append(
+                ArrowAnnotation(
+                    start_x=self.drag_start.x(),
+                    start_y=self.drag_start.y(),
+                    end_x=end_point.x(),
+                    end_y=end_point.y(),
+                )
             )
-        )
-        logger.info("Arrow annotation added")
+            logger.info("Arrow annotation added")
 
-        self.arrow_start = None
-        self.arrow_end = None
-        self.update_preview()
+        if self.tool == "rectangle":
+            left, top, right, bottom = self.normalized_rect_points(self.drag_start, end_point)
+            self.rectangles.append(RectangleAnnotation(left=left, top=top, right=right, bottom=bottom))
+            logger.info("Rectangle annotation added")
+
+        self.clear_drag()
         self.changed.emit()
+
+    def clear_drag(self) -> None:
+        self.drag_start = None
+        self.drag_end = None
+        self.update_preview()
 
     def point_inside_image(self, point: QPoint) -> bool:
         return 0 <= point.x() < self.image.width and 0 <= point.y() < self.image.height
@@ -157,6 +178,13 @@ class ImageCanvas(QLabel):
         x = min(max(point.x(), 0), self.image.width - 1)
         y = min(max(point.y(), 0), self.image.height - 1)
         return QPoint(x, y)
+
+    def normalized_rect_points(self, start: QPoint, end: QPoint) -> tuple[int, int, int, int]:
+        left = min(start.x(), end.x())
+        top = min(start.y(), end.y())
+        right = max(start.x(), end.x())
+        bottom = max(start.y(), end.y())
+        return left, top, right, bottom
 
     def draw_arrow(self, draw: ImageDraw.ImageDraw, start_x: int, start_y: int, end_x: int, end_y: int) -> None:
         color = (255, 0, 0, 255)
@@ -178,6 +206,12 @@ class ImageCanvas(QLabel):
 
         draw.polygon([(end_x, end_y), point1, point2], fill=color)
 
+    def draw_rectangle(self, draw: ImageDraw.ImageDraw, left: int, top: int, right: int, bottom: int) -> None:
+        color = (255, 0, 0, 255)
+        width = 5
+        for offset in range(width):
+            draw.rectangle((left + offset, top + offset, right - offset, bottom - offset), outline=color)
+
 
 class ScreenshotEditor(QDialog):
     closed = Signal()
@@ -196,15 +230,26 @@ class ScreenshotEditor(QDialog):
         main_layout.setSpacing(8)
 
         tools_layout = QHBoxLayout()
-        arrow_button = QPushButton("Стрелка")
-        arrow_button.setCheckable(True)
-        arrow_button.setMinimumHeight(30)
-        arrow_button.clicked.connect(lambda checked: self.select_arrow_tool(checked))
-        tools_layout.addWidget(arrow_button)
+        self.tool_group = QButtonGroup(self)
+        self.tool_group.setExclusive(True)
+
+        self.arrow_button = QPushButton("Стрелка")
+        self.arrow_button.setCheckable(True)
+        self.arrow_button.setMinimumHeight(30)
+        self.arrow_button.clicked.connect(lambda checked: self.select_tool("arrow", checked))
+        self.tool_group.addButton(self.arrow_button)
+        tools_layout.addWidget(self.arrow_button)
+
+        self.rectangle_button = QPushButton("Прямоугольник")
+        self.rectangle_button.setCheckable(True)
+        self.rectangle_button.setMinimumHeight(30)
+        self.rectangle_button.clicked.connect(lambda checked: self.select_tool("rectangle", checked))
+        self.tool_group.addButton(self.rectangle_button)
+        tools_layout.addWidget(self.rectangle_button)
+
         tools_layout.addStretch(1)
         main_layout.addLayout(tools_layout)
 
-        self.arrow_button = arrow_button
         self.canvas = ImageCanvas(image=image)
 
         scroll = QScrollArea()
@@ -244,9 +289,9 @@ class ScreenshotEditor(QDialog):
 
         logger.info("Screenshot editor opened | width=" + str(image.width) + " | height=" + str(image.height))
 
-    def select_arrow_tool(self, checked: bool) -> None:
+    def select_tool(self, tool: str, checked: bool) -> None:
         if checked:
-            self.canvas.set_tool("arrow")
+            self.canvas.set_tool(tool)
         else:
             self.canvas.set_tool("none")
 
