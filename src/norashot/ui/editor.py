@@ -207,10 +207,16 @@ class ImageCanvas(QLabel):
         draw.polygon([(end_x, end_y), point1, point2], fill=color)
 
     def draw_rectangle(self, draw: ImageDraw.ImageDraw, left: int, top: int, right: int, bottom: int) -> None:
+        if right < left:
+            left, right = right, left
+        if bottom < top:
+            top, bottom = bottom, top
+        if right == left or bottom == top:
+            return
+
         color = (255, 0, 0, 255)
         width = 5
-        for offset in range(width):
-            draw.rectangle((left + offset, top + offset, right - offset, bottom - offset), outline=color)
+        draw.rectangle((left, top, right, bottom), outline=color, width=width)
 
 
 class ScreenshotEditor(QDialog):
