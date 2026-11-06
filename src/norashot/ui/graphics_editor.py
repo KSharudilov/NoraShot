@@ -8,11 +8,11 @@ from PIL import Image, ImageFilter
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush, QColor, QImage, QPainter, QPainterPath, QPainterPathStroker,
-    QPen, QPixmap, QPolygonF, QUndoCommand, QUndoStack,
+    QPen, QPixmap, QPolygonF, QUndoCommand, QUndoStack, QFont, QFontMetricsF,
 )
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem, QGraphicsItem, QGraphicsPixmapItem,
-    QGraphicsScene, QGraphicsView,
+    QGraphicsScene, QGraphicsView, QInputDialog,
 )
 
 from norashot.core.clipboard import pil_to_qimage
@@ -65,12 +65,16 @@ class AnnotationItem(QGraphicsItem):
         canvas: "ScreenshotCanvas", blurred: QPixmap | None = None,
     ) -> None:
         super().__init__()
-        if kind not in ("arrow", "rectangle", "blur"):
+        if kind not in ("arrow", "rectangle", "blur", "text"):
             raise ValueError(f"Unknown annotation type: {kind}")
         self.object_id = uuid4().hex[:12]
         self.kind = kind
         self.canvas = canvas
         self.blurred = blurred
+        self.color = QColor(canvas.drawing_color)
+        self.line_width = canvas.drawing_width
+        self.text_value = ""
+        self.font = QFont("Segoe UI", 22)
         self.start_point = QPointF(0, 0)
         self.end_point = end - start
         self.setPos(start)
@@ -85,6 +89,22 @@ class AnnotationItem(QGraphicsItem):
         self.end_handle = ResizeHandle(self, "end")
         self._drag_origin: State | None = None
         self._update_handles()
+        if self.kind == "text":
+            self.start_handle.hide()
+            self.end_handle.hide()
+
+    def set_text_value(self, value: str) -> None:
+        self.prepareGeometryChange()
+        self.text_value = value
+        self.update()
+
+    def apply_style(self, color: QColor, width: int) -> None:
+        self.color = QColor(color)
+        self.line_width = int(width)
+        self.update()
+
+    def style_snapshot(self) -> tuple[str, int]:
+        return (self.color.name(), self.line_width)
 
     def snapshot(self) -> State:
         return (
@@ -107,7 +127,10 @@ class AnnotationItem(QGraphicsItem):
 
     def geometry_path(self) -> QPainterPath:
         path = QPainterPath()
-        if self.kind in ("rectangle", "blur"):
+        if self.kind == "text":
+            bounds = QFontMetricsF(self.font).boundingRect(self.text_value or " ")
+            path.addRect(QRectF(0, 0, max(1, bounds.width() + 8), max(1, bounds.height() + 8)))
+        elif self.kind in ("rectangle", "blur"):
             path.addRect(QRectF(self.start_point, self.end_point).normalized())
         else:
             path.moveTo(self.start_point)
@@ -127,7 +150,7 @@ class AnnotationItem(QGraphicsItem):
         return self.geometry_path().boundingRect().adjusted(-9, -9, 9, 9)
 
     def shape(self) -> QPainterPath:
-        if self.kind == "blur":
+        if self.kind in ("blur", "text"):
             return self.geometry_path()
         stroker = QPainterPathStroker()
         stroker.setWidth(14)
@@ -136,13 +159,19 @@ class AnnotationItem(QGraphicsItem):
     def paint(self, painter: QPainter, option, widget=None) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.start_point, self.end_point).normalized()
+        if self.kind == "text":
+            painter.setPen(QPen(self.color))
+            painter.setFont(self.font)
+            metrics = QFontMetricsF(self.font)
+            painter.drawText(QPointF(4, 4 + metrics.ascent()), self.text_value)
+            return
         if self.kind == "blur":
             if self.blurred is not None and not rect.isEmpty():
                 # Source coordinates follow the moved/resized rectangle: never stretch pixels.
                 painter.drawPixmap(rect, self.blurred, rect.translated(self.pos()))
             return
         painter.setPen(
-            QPen(RED, 5, Qt.PenStyle.SolidLine,
+            QPen(self.color, self.line_width, Qt.PenStyle.SolidLine,
                  Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         )
         if self.kind == "rectangle":
@@ -157,7 +186,7 @@ class AnnotationItem(QGraphicsItem):
         spread = math.radians(28)
         a = self.end_point - QPointF(22 * math.cos(angle - spread), 22 * math.sin(angle - spread))
         b = self.end_point - QPointF(22 * math.cos(angle + spread), 22 * math.sin(angle + spread))
-        painter.setBrush(QBrush(RED))
+        painter.setBrush(QBrush(self.color))
         painter.drawPolygon(QPolygonF([self.end_point, a, b]))
 
     def _update_handles(self) -> None:
@@ -191,10 +220,22 @@ class AnnotationItem(QGraphicsItem):
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             selected = bool(value)
-            self.start_handle.setVisible(selected)
-            self.end_handle.setVisible(selected)
+            self.start_handle.setVisible(selected and self.kind != 'text')
+            self.end_handle.setVisible(selected and self.kind != 'text')
             logger.debug("Selection changed | id={} | selected={}", self.object_id, selected)
         return super().itemChange(change, value)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if self.kind != "text":
+            super().mouseDoubleClickEvent(event)
+            return
+        text, ok = QInputDialog.getMultiLineText(
+            self.canvas, "NoraShot — текст", "Изменить подпись:", self.text_value
+        )
+        if ok and text.strip() and text != self.text_value:
+            self.canvas.history.push(TextCommand(self, self.text_value, text))
+            logger.info("Text annotation edited | id={}", self.object_id)
+        event.accept()
 
     def mousePressEvent(self, event) -> None:
         self._drag_origin = self.snapshot()
@@ -259,6 +300,34 @@ class TransformCommand(QUndoCommand):
         logger.info("Redo transform | id={} | kind={}", self.item.object_id, self.item.kind)
 
 
+class StyleCommand(QUndoCommand):
+    def __init__(self, item: AnnotationItem, before: tuple[str, int], after: tuple[str, int]) -> None:
+        super().__init__("Change annotation style")
+        self.item, self.before, self.after = item, before, after
+
+    def undo(self) -> None:
+        self.item.apply_style(QColor(self.before[0]), self.before[1])
+        logger.info("Undo style | id={}", self.item.object_id)
+
+    def redo(self) -> None:
+        self.item.apply_style(QColor(self.after[0]), self.after[1])
+        logger.info("Redo style | id={}", self.item.object_id)
+
+
+class TextCommand(QUndoCommand):
+    def __init__(self, item: AnnotationItem, before: str, after: str) -> None:
+        super().__init__("Edit text")
+        self.item, self.before, self.after = item, before, after
+
+    def undo(self) -> None:
+        self.item.set_text_value(self.before)
+        logger.info("Undo text edit | id={}", self.item.object_id)
+
+    def redo(self) -> None:
+        self.item.set_text_value(self.after)
+        logger.info("Redo text edit | id={}", self.item.object_id)
+
+
 class ScreenshotCanvas(QGraphicsView):
     """Screenshot + separate editable objects + one undo stack."""
 
@@ -269,6 +338,8 @@ class ScreenshotCanvas(QGraphicsView):
         super().__init__(parent)
         self.image = image.copy().convert("RGBA")
         self.tool = "select"
+        self.drawing_color = QColor(RED)
+        self.drawing_width = 5
         self.drag_start: QPointF | None = None
         self.draft: AnnotationItem | None = None
         self.history = QUndoStack(self)
@@ -292,7 +363,7 @@ class ScreenshotCanvas(QGraphicsView):
         logger.info("Editable canvas ready | width={} | height={}", self.image.width, self.image.height)
 
     def set_tool(self, tool: str) -> None:
-        if tool not in ("select", "arrow", "rectangle", "blur"):
+        if tool not in ("select", "arrow", "rectangle", "blur", "text"):
             raise ValueError(f"Unknown editor tool: {tool}")
         self.tool = tool
         self.viewport().setCursor(
@@ -300,6 +371,29 @@ class ScreenshotCanvas(QGraphicsView):
         )
         logger.info("Editor tool selected | tool={}", tool)
         self.tool_changed.emit(tool)
+
+    def set_drawing_style(self, color: QColor | None = None, width: int | None = None) -> None:
+        """Apply style to selected vector objects; otherwise update defaults."""
+        if color is not None:
+            self.drawing_color = QColor(color)
+        if width is not None:
+            self.drawing_width = int(width)
+        for item in self.canvas_scene.selectedItems():
+            if not isinstance(item, AnnotationItem) or item.kind == "blur":
+                continue
+            before = item.style_snapshot()
+            after = (self.drawing_color.name(), self.drawing_width)
+            if before != after:
+                self.history.push(StyleCommand(item, before, after))
+                self.changed.emit()
+                logger.info(
+                    "Annotation style updated | id={} | color={} | width={}",
+                    item.object_id, after[0], after[1],
+                )
+        logger.info(
+            "Default drawing style | color={} | width={}",
+            self.drawing_color.name(), self.drawing_width,
+        )
 
     def fit_screenshot(self) -> None:
         """Fit the full screenshot inside the available viewport without changing export resolution."""
@@ -364,6 +458,18 @@ class ScreenshotCanvas(QGraphicsView):
             event.ignore()
             return
         self.canvas_scene.clearSelection()
+        if self.tool == "text":
+            value, ok = QInputDialog.getMultiLineText(
+                self, "NoraShot — текст", "Введите подпись:"
+            )
+            if ok and value.strip():
+                item = AnnotationItem("text", self._clamp(point), self._clamp(point), self)
+                item.set_text_value(value)
+                self.history.push(CreateCommand(self, item))
+                self.changed.emit()
+                logger.info("Text annotation created | id={} | chars={}", item.object_id, len(value))
+            event.accept()
+            return
         self.drag_start = self._clamp(point)
         self.draft = AnnotationItem(
             self.tool, self.drag_start, self.drag_start, self,
