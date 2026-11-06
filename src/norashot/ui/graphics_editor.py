@@ -106,7 +106,7 @@ class AnnotationItem(QGraphicsItem):
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(RED, 5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.Round, Qt.PenJoinStyle.Round))
+        painter.setPen(QPen(RED, 5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
         if self.kind == "rectangle":
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(QRectF(self.start_point, self.end_point).normalized())
