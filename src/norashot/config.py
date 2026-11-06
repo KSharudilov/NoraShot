@@ -77,7 +77,7 @@ class NoraShotConfig:
 def deep_update_dataclass(instance: Any, values: dict[str, Any]) -> Any:
     for key, value in values.items():
         if not hasattr(instance, key):
-            logger.warning("Unknown config key ignored | key=%s", key)
+            logger.warning("Unknown config key ignored | key={}", key)
             continue
 
         current_value = getattr(instance, key)
@@ -94,7 +94,7 @@ def load_config(path: Path | None = None) -> NoraShotConfig:
     config = NoraShotConfig()
 
     if not config_path.exists():
-        logger.info("Config not found, creating default config | path=%s", config_path)
+        logger.info("Config not found, creating default config | path={}", config_path)
         save_config(config, config_path)
         return config
 
@@ -103,10 +103,10 @@ def load_config(path: Path | None = None) -> NoraShotConfig:
         if not isinstance(data, dict):
             raise ValueError("Config root must be a dictionary")
         deep_update_dataclass(config, data)
-        logger.info("Config loaded | path=%s", config_path)
+        logger.info("Config loaded | path={}", config_path)
         return config
     except Exception:
-        logger.exception("Failed to load config, using defaults | path=%s", config_path)
+        logger.exception("Failed to load config, using defaults | path={}", config_path)
         return config
 
 
@@ -119,4 +119,4 @@ def save_config(config: NoraShotConfig, path: Path | None = None) -> None:
         yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
-    logger.info("Config saved | path=%s", config_path)
+    logger.info("Config saved | path={}", config_path)
