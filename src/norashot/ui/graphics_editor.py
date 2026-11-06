@@ -128,8 +128,10 @@ class AnnotationItem(QGraphicsItem):
     def geometry_path(self) -> QPainterPath:
         path = QPainterPath()
         if self.kind == "text":
-            bounds = QFontMetricsF(self.font).boundingRect(self.text_value or " ")
-            path.addRect(QRectF(0, 0, max(1, bounds.width() + 8), max(1, bounds.height() + 8)))
+            metrics = QFontMetricsF(self.font)
+            lines = (self.text_value or " ").splitlines() or [" "]
+            width = max(metrics.horizontalAdvance(line or " ") for line in lines)
+            path.addRect(QRectF(0, 0, max(1, width + 8), max(1, metrics.height() * len(lines) + 8)))
         elif self.kind in ("rectangle", "blur"):
             path.addRect(QRectF(self.start_point, self.end_point).normalized())
         else:
@@ -163,7 +165,11 @@ class AnnotationItem(QGraphicsItem):
             painter.setPen(QPen(self.color))
             painter.setFont(self.font)
             metrics = QFontMetricsF(self.font)
-            painter.drawText(QPointF(4, 4 + metrics.ascent()), self.text_value)
+            for line_number, line in enumerate(self.text_value.splitlines()):
+                painter.drawText(
+                    QPointF(4, 4 + metrics.ascent() + line_number * metrics.height()),
+                    line,
+                )
             return
         if self.kind == "blur":
             if self.blurred is not None and not rect.isEmpty():
