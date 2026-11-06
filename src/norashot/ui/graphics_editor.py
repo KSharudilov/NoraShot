@@ -263,6 +263,7 @@ class ScreenshotCanvas(QGraphicsView):
     """Screenshot + separate editable objects + one undo stack."""
 
     changed = Signal()
+    tool_changed = Signal(str)
 
     def __init__(self, image: Image.Image, parent=None) -> None:
         super().__init__(parent)
@@ -286,6 +287,8 @@ class ScreenshotCanvas(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setBackgroundBrush(QColor("#202020"))
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         logger.info("Editable canvas ready | width={} | height={}", self.image.width, self.image.height)
 
     def set_tool(self, tool: str) -> None:
@@ -296,6 +299,37 @@ class ScreenshotCanvas(QGraphicsView):
             Qt.CursorShape.ArrowCursor if tool == "select" else Qt.CursorShape.CrossCursor
         )
         logger.info("Editor tool selected | tool={}", tool)
+        self.tool_changed.emit(tool)
+
+    def fit_screenshot(self) -> None:
+        """Fit the full screenshot inside the available viewport without changing export resolution."""
+        if self.image.width < 1 or self.image.height < 1:
+            return
+        self.resetTransform()
+        self.fitInView(self.canvas_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        logger.debug(
+            "Screenshot fitted to editor | image={}x{} | viewport={}x{} | scale={:.3f}",
+            self.image.width, self.image.height,
+            self.viewport().width(), self.viewport().height(),
+            self.transform().m11(),
+        )
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.fit_screenshot()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.fit_screenshot()
+
+    def _annotation_at(self, point):
+        """Look through resize handles to find their parent annotation."""
+        hit = self.itemAt(point)
+        while hit is not None:
+            if isinstance(hit, AnnotationItem):
+                return hit
+            hit = hit.parentItem()
+        return None
 
     def _clamp(self, point: QPointF) -> QPointF:
         return QPointF(
@@ -312,6 +346,17 @@ class ScreenshotCanvas(QGraphicsView):
 
     def mousePressEvent(self, event) -> None:
         if self.tool == "select" or event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        # Clicking an existing object is always editing, even when a draw tool is active.
+        # QGraphicsView performs item picking in viewport coordinates, including scaling.
+        existing = self._annotation_at(event.position().toPoint())
+        if existing is not None:
+            logger.info(
+                "Switching to selection after object click | id={} | kind={} | previous_tool={}",
+                existing.object_id, existing.kind, self.tool,
+            )
+            self.set_tool("select")
             super().mousePressEvent(event)
             return
         point = self.mapToScene(event.position().toPoint())
