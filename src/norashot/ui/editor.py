@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QSpinBox,
     QLabel,
+    QFontComboBox,
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QMessageBox,
@@ -58,6 +60,7 @@ class ScreenshotEditor(QDialog):
             ("Стрелка", "arrow"),
             ("Прямоугольник", "rectangle"),
             ("Размытие", "blur"),
+            ("Скрыть", "redact"),
             ("Текст", "text"),
         ):
             button = QPushButton(label)
@@ -92,6 +95,23 @@ class ScreenshotEditor(QDialog):
         self.width_spin.setToolTip("Толщина линий для новых и выделенных фигур")
         self.width_spin.valueChanged.connect(self.change_width)
         style_layout.addWidget(self.width_spin)
+        style_layout.addSpacing(12)
+        style_layout.addWidget(QLabel("Шрифт:"))
+        self.font_box = QFontComboBox()
+        self.font_box.setCurrentFont(self.canvas.text_font)
+        self.font_box.setMaximumWidth(190)
+        self.font_box.currentFontChanged.connect(self.change_font_family)
+        style_layout.addWidget(self.font_box)
+        style_layout.addWidget(QLabel("Размер:"))
+        self.font_size = QSpinBox()
+        self.font_size.setRange(6, 144)
+        self.font_size.setValue(self.canvas.text_size)
+        self.font_size.valueChanged.connect(self.change_font_size)
+        style_layout.addWidget(self.font_size)
+        self.bold_check = QCheckBox("Жирный")
+        self.bold_check.setChecked(self.canvas.text_bold)
+        self.bold_check.toggled.connect(self.change_font_bold)
+        style_layout.addWidget(self.bold_check)
         style_layout.addStretch(1)
 
         undo_button = QPushButton("↶ Отменить")
@@ -154,11 +174,12 @@ class ScreenshotEditor(QDialog):
             "arrow": self.arrow_button,
             "rectangle": self.rectangle_button,
         }
-        if tool == "blur":
-            for button in self.tool_group.buttons():
-                if button.text() == "Размытие":
-                    buttons["blur"] = button
-                    break
+        for special_tool, label in (("blur", "Размытие"), ("text", "Текст"), ("redact", "Скрыть")):
+            if tool == special_tool:
+                for candidate in self.tool_group.buttons():
+                    if candidate.text() == label:
+                        buttons[special_tool] = candidate
+                        break
         button = buttons.get(tool)
         if button is not None:
             button.setChecked(True)
@@ -178,6 +199,15 @@ class ScreenshotEditor(QDialog):
     def change_width(self, width: int) -> None:
         self.canvas.set_drawing_style(width=width)
         logger.info("Annotation line width chosen | width={}", width)
+
+    def change_font_family(self, font) -> None:
+        self.canvas.set_text_style(family=font.family())
+
+    def change_font_size(self, size: int) -> None:
+        self.canvas.set_text_style(size=size)
+
+    def change_font_bold(self, bold: bool) -> None:
+        self.canvas.set_text_style(bold=bold)
 
     def current_image(self) -> Image.Image:
         return self.canvas.render_image()
