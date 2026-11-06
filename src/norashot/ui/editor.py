@@ -7,9 +7,12 @@ from pathlib import Path
 from loguru import logger
 from PIL import Image
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut, QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QColorDialog,
+    QSpinBox,
+    QLabel,
     QDialog,
     QHBoxLayout,
     QMessageBox,
@@ -55,6 +58,7 @@ class ScreenshotEditor(QDialog):
             ("Стрелка", "arrow"),
             ("Прямоугольник", "rectangle"),
             ("Размытие", "blur"),
+            ("Текст", "text"),
         ):
             button = QPushButton(label)
             button.setCheckable(True)
@@ -72,6 +76,21 @@ class ScreenshotEditor(QDialog):
 
         self.canvas.tool_changed.connect(self._sync_tool_buttons)
         tools_layout.addStretch(1)
+
+        self.color_button = QPushButton("Цвет: красный")
+        self.color_button.setToolTip("Выбор цвета для новых и выделенных фигур")
+        self.color_button.clicked.connect(self.choose_color)
+        tools_layout.addWidget(self.color_button)
+
+        width_label = QLabel("Толщина:")
+        tools_layout.addWidget(width_label)
+        self.width_spin = QSpinBox()
+        self.width_spin.setRange(1, 20)
+        self.width_spin.setValue(5)
+        self.width_spin.setToolTip("Толщина линий для новых и выделенных фигур")
+        self.width_spin.valueChanged.connect(self.change_width)
+        tools_layout.addWidget(self.width_spin)
+
         undo_button = QPushButton("↶ Отменить")
         redo_button = QPushButton("↷ Повторить")
         undo_button.setMinimumHeight(30)
@@ -140,6 +159,21 @@ class ScreenshotEditor(QDialog):
         if button is not None:
             button.setChecked(True)
         logger.debug("Editor tool button synchronized | tool={}", tool)
+
+    def choose_color(self) -> None:
+        color = QColorDialog.getColor(self.canvas.drawing_color, self, "Цвет аннотаций")
+        if not color.isValid():
+            return
+        self.canvas.set_drawing_style(color=color)
+        self.color_button.setText("Цвет: " + color.name())
+        self.color_button.setStyleSheet(
+            "border-bottom: 3px solid " + color.name() + ";"
+        )
+        logger.info("Annotation color chosen | color={}", color.name())
+
+    def change_width(self, width: int) -> None:
+        self.canvas.set_drawing_style(width=width)
+        logger.info("Annotation line width chosen | width={}", width)
 
     def current_image(self) -> Image.Image:
         return self.canvas.render_image()
