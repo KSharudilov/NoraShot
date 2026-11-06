@@ -6,7 +6,7 @@ from pathlib import Path
 
 from loguru import logger
 from PIL import Image
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -33,6 +33,11 @@ class ScreenshotEditor(QDialog):
         self.saved_path: Path | None = None
 
         self.setWindowTitle("NoraShot")
+        self.setWindowFlags(
+            Qt.WindowType.Window
+            | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
         self.setMinimumSize(900, 600)
         self.resize(1100, 760)
 
@@ -65,6 +70,7 @@ class ScreenshotEditor(QDialog):
             if tool == "rectangle":
                 self.rectangle_button = button
 
+        self.canvas.tool_changed.connect(self._sync_tool_buttons)
         tools_layout.addStretch(1)
         undo_button = QPushButton("↶ Отменить")
         redo_button = QPushButton("↷ Повторить")
@@ -118,6 +124,22 @@ class ScreenshotEditor(QDialog):
 
     def select_tool(self, tool: str) -> None:
         self.canvas.set_tool(tool)
+
+    def _sync_tool_buttons(self, tool: str) -> None:
+        buttons = {
+            "select": self.select_button,
+            "arrow": self.arrow_button,
+            "rectangle": self.rectangle_button,
+        }
+        if tool == "blur":
+            for button in self.tool_group.buttons():
+                if button.text() == "Размытие":
+                    buttons["blur"] = button
+                    break
+        button = buttons.get(tool)
+        if button is not None:
+            button.setChecked(True)
+        logger.debug("Editor tool button synchronized | tool={}", tool)
 
     def current_image(self) -> Image.Image:
         return self.canvas.render_image()
