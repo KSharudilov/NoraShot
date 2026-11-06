@@ -77,19 +77,22 @@ class ScreenshotEditor(QDialog):
         self.canvas.tool_changed.connect(self._sync_tool_buttons)
         tools_layout.addStretch(1)
 
+        # Keep drawing controls on a separate row so narrow windows remain usable.
+        style_layout = QHBoxLayout()
         self.color_button = QPushButton("Цвет: красный")
         self.color_button.setToolTip("Выбор цвета для новых и выделенных фигур")
         self.color_button.clicked.connect(self.choose_color)
-        tools_layout.addWidget(self.color_button)
+        style_layout.addWidget(self.color_button)
 
         width_label = QLabel("Толщина:")
-        tools_layout.addWidget(width_label)
+        style_layout.addWidget(width_label)
         self.width_spin = QSpinBox()
         self.width_spin.setRange(1, 20)
         self.width_spin.setValue(5)
         self.width_spin.setToolTip("Толщина линий для новых и выделенных фигур")
         self.width_spin.valueChanged.connect(self.change_width)
-        tools_layout.addWidget(self.width_spin)
+        style_layout.addWidget(self.width_spin)
+        style_layout.addStretch(1)
 
         undo_button = QPushButton("↶ Отменить")
         redo_button = QPushButton("↷ Повторить")
@@ -116,6 +119,7 @@ class ScreenshotEditor(QDialog):
             shortcut.activated.connect(callback)
 
         main_layout.addLayout(tools_layout)
+        main_layout.addLayout(style_layout)
         main_layout.addWidget(self.canvas, 1)
 
         bottom_layout = QHBoxLayout()
