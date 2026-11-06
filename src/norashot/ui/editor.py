@@ -7,7 +7,7 @@ from pathlib import Path
 from loguru import logger
 from PIL import Image
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut, QColor
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut, QColor, QFont
 from PySide6.QtWidgets import (
     QButtonGroup,
     QColorDialog,
@@ -98,7 +98,7 @@ class ScreenshotEditor(QDialog):
         style_layout.addSpacing(12)
         style_layout.addWidget(QLabel("Шрифт:"))
         self.font_box = QFontComboBox()
-        self.font_box.setCurrentFont(self.canvas.text_font)
+        self.font_box.setCurrentFont(QFont(self.canvas.text_font))
         self.font_box.setMaximumWidth(190)
         self.font_box.currentFontChanged.connect(self.change_font_family)
         style_layout.addWidget(self.font_box)
