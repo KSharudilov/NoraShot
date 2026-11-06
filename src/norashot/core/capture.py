@@ -28,15 +28,65 @@ class RECT(ctypes.Structure):
 
 
 class ScreenshotService:
-    def capture_fullscreen(self, monitor_index: int = 1) -> Image.Image:
-        logger.info("Capturing fullscreen | monitor_index=" + str(monitor_index))
+    def capture_fullscreen(self, monitor_index: int | None = None) -> Image.Image:
+        """Capture the display under the cursor; allow explicit index when needed."""
         with mss.mss() as sct:
-            monitor = sct.monitors[monitor_index]
+            monitors = sct.monitors
+            if len(monitors) <= 1:
+                raise RuntimeError("No physical displays detected by MSS")
+
+            if monitor_index is None:
+                monitor_index = self._monitor_under_cursor(monitors)
+
+            if not 1 <= monitor_index < len(monitors):
+                logger.error(
+                    "Invalid monitor index | index={} | available={}",
+                    monitor_index, len(monitors) - 1,
+                )
+                raise ValueError(f"Monitor index out of range: {monitor_index}")
+
+            monitor = monitors[monitor_index]
+            logger.info(
+                "Capturing display | index={} | left={} | top={} | width={} | height={}",
+                monitor_index, monitor["left"], monitor["top"],
+                monitor["width"], monitor["height"],
+            )
             shot = sct.grab(monitor)
             image = Image.frombytes("RGB", shot.size, shot.rgb)
 
-        logger.info("Fullscreen captured | size=" + str(image.width) + "x" + str(image.height))
+        logger.info("Display captured | size={}x{}", image.width, image.height)
         return image
+
+    @staticmethod
+    def _monitor_under_cursor(monitors) -> int:
+        """Compare Win32 cursor coordinates to MSS physical display rectangles."""
+        if sys.platform != "win32":
+            logger.warning("Cursor display detection requires Windows; defaulting to primary")
+            return 1
+
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+        cursor = POINT()
+        if not ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor)):
+            logger.warning("GetCursorPos failed; defaulting to primary monitor")
+            return 1
+
+        x, y = int(cursor.x), int(cursor.y)
+        for index, monitor in enumerate(monitors[1:], start=1):
+            left, top = monitor["left"], monitor["top"]
+            if left <= x < left + monitor["width"] and top <= y < top + monitor["height"]:
+                logger.info(
+                    "Display selected from cursor | index={} | cursor_x={} | cursor_y={}",
+                    index, x, y,
+                )
+                return index
+
+        logger.warning(
+            "No display contains cursor; using primary | cursor_x={} | cursor_y={}",
+            x, y,
+        )
+        return 1
 
     def capture_region(self, region: Region) -> Image.Image:
         logger.info(
