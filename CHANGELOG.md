@@ -10,6 +10,9 @@
 
 ## Unreleased (after 0.1.0 MVP)
 
+- Editable text annotations with double-click editing and multiline text.
+- Per-object color and line-width settings with Undo/Redo.
+- Two-row toolbar for smaller editor windows.
 - Editable arrow, rectangle and blur annotations.
 - Undo/redo for create, move, resize and delete.
 - Clicking an existing object in drawing mode switches to select/move.
