@@ -65,7 +65,7 @@ class AnnotationItem(QGraphicsItem):
         canvas: "ScreenshotCanvas", blurred: QPixmap | None = None,
     ) -> None:
         super().__init__()
-        if kind not in ("arrow", "rectangle", "blur", "text"):
+        if kind not in ("arrow", "rectangle", "blur", "text", "redact"):
             raise ValueError(f"Unknown annotation type: {kind}")
         self.object_id = uuid4().hex[:12]
         self.kind = kind
@@ -74,7 +74,9 @@ class AnnotationItem(QGraphicsItem):
         self.color = QColor(canvas.drawing_color)
         self.line_width = canvas.drawing_width
         self.text_value = ""
-        self.font = QFont("Segoe UI", 22)
+        self.font = QFont(canvas.text_font)
+        self.font.setPointSize(canvas.text_size)
+        self.font.setBold(canvas.text_bold)
         self.start_point = QPointF(0, 0)
         self.end_point = end - start
         self.setPos(start)
@@ -101,6 +103,16 @@ class AnnotationItem(QGraphicsItem):
     def apply_style(self, color: QColor, width: int) -> None:
         self.color = QColor(color)
         self.line_width = int(width)
+        self.update()
+
+    def font_snapshot(self) -> tuple[str, int, bool]:
+        return (self.font.family(), self.font.pointSize(), self.font.bold())
+
+    def apply_font(self, family: str, size: int, bold: bool) -> None:
+        self.prepareGeometryChange()
+        self.font.setFamily(family)
+        self.font.setPointSize(size)
+        self.font.setBold(bold)
         self.update()
 
     def style_snapshot(self) -> tuple[str, int]:
@@ -132,7 +144,7 @@ class AnnotationItem(QGraphicsItem):
             lines = (self.text_value or " ").splitlines() or [" "]
             width = max(metrics.horizontalAdvance(line or " ") for line in lines)
             path.addRect(QRectF(0, 0, max(1, width + 8), max(1, metrics.height() * len(lines) + 8)))
-        elif self.kind in ("rectangle", "blur"):
+        elif self.kind in ("rectangle", "blur", "redact"):
             path.addRect(QRectF(self.start_point, self.end_point).normalized())
         else:
             path.moveTo(self.start_point)
@@ -152,7 +164,7 @@ class AnnotationItem(QGraphicsItem):
         return self.geometry_path().boundingRect().adjusted(-9, -9, 9, 9)
 
     def shape(self) -> QPainterPath:
-        if self.kind in ("blur", "text"):
+        if self.kind in ("blur", "redact", "text"):
             return self.geometry_path()
         stroker = QPainterPathStroker()
         stroker.setWidth(14)
@@ -170,6 +182,11 @@ class AnnotationItem(QGraphicsItem):
                     QPointF(4, 4 + metrics.ascent() + line_number * metrics.height()),
                     line,
                 )
+            return
+        if self.kind == "redact":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor("#000000")))
+            painter.drawRect(rect)
             return
         if self.kind == "blur":
             if self.blurred is not None and not rect.isEmpty():
@@ -196,7 +213,7 @@ class AnnotationItem(QGraphicsItem):
         painter.drawPolygon(QPolygonF([self.end_point, a, b]))
 
     def _update_handles(self) -> None:
-        if self.kind in ("rectangle", "blur"):
+        if self.kind in ("rectangle", "blur", "redact"):
             rect = QRectF(self.start_point, self.end_point).normalized()
             self.start_handle.setPos(rect.topLeft())
             self.end_handle.setPos(rect.bottomRight())
@@ -212,7 +229,7 @@ class AnnotationItem(QGraphicsItem):
         self.update()
 
     def resize_endpoint(self, role: str, point: QPointF) -> None:
-        if self.kind in ("rectangle", "blur"):
+        if self.kind in ("rectangle", "blur", "redact"):
             rect = QRectF(self.start_point, self.end_point).normalized()
             if role == "start":
                 self.set_geometry(point, rect.bottomRight())
@@ -320,6 +337,23 @@ class StyleCommand(QUndoCommand):
         logger.info("Redo style | id={}", self.item.object_id)
 
 
+class FontCommand(QUndoCommand):
+    def __init__(
+        self, item: AnnotationItem, before: tuple[str, int, bool],
+        after: tuple[str, int, bool],
+    ) -> None:
+        super().__init__("Change text font")
+        self.item, self.before, self.after = item, before, after
+
+    def undo(self) -> None:
+        self.item.apply_font(*self.before)
+        logger.info("Undo font change | id={}", self.item.object_id)
+
+    def redo(self) -> None:
+        self.item.apply_font(*self.after)
+        logger.info("Redo font change | id={}", self.item.object_id)
+
+
 class TextCommand(QUndoCommand):
     def __init__(self, item: AnnotationItem, before: str, after: str) -> None:
         super().__init__("Edit text")
@@ -346,6 +380,9 @@ class ScreenshotCanvas(QGraphicsView):
         self.tool = "select"
         self.drawing_color = QColor(RED)
         self.drawing_width = 5
+        self.text_font = "Segoe UI"
+        self.text_size = 22
+        self.text_bold = False
         self.drag_start: QPointF | None = None
         self.draft: AnnotationItem | None = None
         self.history = QUndoStack(self)
@@ -369,7 +406,7 @@ class ScreenshotCanvas(QGraphicsView):
         logger.info("Editable canvas ready | width={} | height={}", self.image.width, self.image.height)
 
     def set_tool(self, tool: str) -> None:
-        if tool not in ("select", "arrow", "rectangle", "blur", "text"):
+        if tool not in ("select", "arrow", "rectangle", "blur", "text", "redact"):
             raise ValueError(f"Unknown editor tool: {tool}")
         self.tool = tool
         self.viewport().setCursor(
@@ -400,6 +437,26 @@ class ScreenshotCanvas(QGraphicsView):
             "Default drawing style | color={} | width={}",
             self.drawing_color.name(), self.drawing_width,
         )
+
+    def set_text_style(
+        self, family: str | None = None, size: int | None = None,
+        bold: bool | None = None,
+    ) -> None:
+        if family is not None:
+            self.text_font = family
+        if size is not None:
+            self.text_size = max(6, min(int(size), 144))
+        if bold is not None:
+            self.text_bold = bool(bold)
+        new_style = (self.text_font, self.text_size, self.text_bold)
+        for item in self.canvas_scene.selectedItems():
+            if isinstance(item, AnnotationItem) and item.kind == "text":
+                before = item.font_snapshot()
+                if before != new_style:
+                    self.history.push(FontCommand(item, before, new_style))
+                    self.changed.emit()
+                    logger.info("Text font updated | id={} | font={}", item.object_id, new_style)
+        logger.info("Default text font | font={} | size={} | bold={}", *new_style)
 
     def fit_screenshot(self) -> None:
         """Fit the full screenshot inside the available viewport without changing export resolution."""
@@ -504,7 +561,7 @@ class ScreenshotCanvas(QGraphicsView):
         item = self.draft
         self.draft = None
         self.drag_start = None
-        if (item.kind in ("rectangle", "blur") and (dx < 4 or dy < 4)) or (
+        if (item.kind in ("rectangle", "blur", "redact") and (dx < 4 or dy < 4)) or (
             item.kind == "arrow" and dx < 4 and dy < 4
         ):
             self.canvas_scene.removeItem(item)
