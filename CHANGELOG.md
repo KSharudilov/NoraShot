@@ -1,5 +1,22 @@
 # Changelog
 
+## Next milestones (planned)
+
+- Choose a specific application/window from a list and capture it even if it is not foreground.
+- Prefer distinct windows over process names when applications have multiple windows.
+- Add user-facing window titles and preview to the window picker.
+- Continue editor improvements: text labels, configurable colors and line widths.
+- Regression-test multi-monitor capture, DPI scaling and screen coordinate mapping.
+
+## Unreleased (after 0.1.0 MVP)
+
+- Editable arrow, rectangle and blur annotations.
+- Undo/redo for create, move, resize and delete.
+- Clicking an existing object in drawing mode switches to select/move.
+- Fit screenshots into the editor viewport while keeping native export resolution.
+- Enable standard Windows maximize/minimize buttons on the editor.
+- Full-screen capture defaults to the display under the mouse pointer.
+
 ## 0.1.0 MVP - 2026-06-09
 
 Stable MVP release.
