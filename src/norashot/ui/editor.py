@@ -7,7 +7,7 @@ from pathlib import Path
 from loguru import logger
 from PIL import Image
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -49,6 +49,7 @@ class ScreenshotEditor(QDialog):
             ("Выбрать / переместить", "select"),
             ("Стрелка", "arrow"),
             ("Прямоугольник", "rectangle"),
+            ("Размытие", "blur"),
         ):
             button = QPushButton(label)
             button.setCheckable(True)
@@ -65,6 +66,30 @@ class ScreenshotEditor(QDialog):
                 self.rectangle_button = button
 
         tools_layout.addStretch(1)
+        undo_button = QPushButton("↶ Отменить")
+        redo_button = QPushButton("↷ Повторить")
+        undo_button.setMinimumHeight(30)
+        redo_button.setMinimumHeight(30)
+        undo_button.setEnabled(False)
+        redo_button.setEnabled(False)
+        undo_button.clicked.connect(self.canvas.history.undo)
+        redo_button.clicked.connect(self.canvas.history.redo)
+        self.canvas.history.canUndoChanged.connect(undo_button.setEnabled)
+        self.canvas.history.canRedoChanged.connect(redo_button.setEnabled)
+        tools_layout.addWidget(undo_button)
+        tools_layout.addWidget(redo_button)
+        self.undo_button = undo_button
+        self.redo_button = redo_button
+
+        for sequence, callback in (
+            ("Ctrl+Z", self.canvas.history.undo),
+            ("Ctrl+Y", self.canvas.history.redo),
+            ("Ctrl+Shift+Z", self.canvas.history.redo),
+            ("Delete", self.canvas.delete_selected),
+        ):
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.activated.connect(callback)
+
         main_layout.addLayout(tools_layout)
         main_layout.addWidget(self.canvas, 1)
 
