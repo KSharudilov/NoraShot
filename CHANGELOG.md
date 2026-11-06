@@ -5,15 +5,17 @@
 - Choose a specific application/window from a list and capture it even if it is not foreground.
 - Prefer distinct windows over process names when applications have multiple windows.
 - Add user-facing window titles and preview to the window picker.
-- Continue editor improvements: safe opaque redaction and text font controls (implemented; pending Windows validation).
+- Implement S3-compatible sharing with secure credentials and expiring links.
 - Regression-test multi-monitor capture, DPI scaling and screen coordinate mapping.
 
 ## Unreleased (after 0.1.0 MVP)
 
+- Fixed Loguru placeholders in configuration logging.
+- Updated README with tested editor features, real Windows configuration/logging paths and planned secure S3 sharing.
 - Text font family, size and bold controls with undo/redo per text object.
 - Editable opaque black redaction rectangles for sensitive information.
 - Preserved tested editor baseline on branch `stable-editor-2026-11-06`.
-- Next release work: build reproducible Windows EXE, startup toggle and automated UI checks.
+- Next release work: private S3 sharing, reproducible Windows EXE, startup toggle and automated UI checks.
 - Editable text annotations with double-click editing and multiline text.
 - Per-object color and line-width settings with Undo/Redo.
 - Two-row toolbar for smaller editor windows.
