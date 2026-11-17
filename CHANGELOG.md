@@ -2,6 +2,8 @@
 
 ## 0.2.0 — release candidate (2026-11-17)
 
+- Fixed startup crash in PyInstaller `--windowed` builds when `sys.stderr` is `None`.
+- Added consoleless Loguru regression tests and file-logging verification in packaged EXE self-test.
 - Prepared portable Windows EXE build with PyInstaller, SHA-256 checksum and smoke test.
 - Added GitHub Actions test matrix for Python 3.11/3.13 on Windows/Linux.
 - Added offscreen Qt screenshot/annotation regression tests, S3 diagnostic tests and connection checks.
