@@ -2,7 +2,7 @@
 
 NoraShot — Windows screenshot utility written in Python using PySide6. Capture a screen area, active window, or monitor under the cursor; annotate, copy, save, or share the result via a private S3-compatible bucket.
 
-> **Status:** active development. The published package version is `0.1.0`, but the current `main` branch already contains improvements beyond the original MVP. These changes are not yet an installer or a formal release. The last user-tested editor snapshot is preserved in branch [`stable-editor-2026-11-06`](https://github.com/KSharudilov/NoraShot/tree/stable-editor-2026-11-06).
+> **Status:** preparing first formal portable Windows release, `0.2.0`. Source code and release automation are present, but do not treat the build as released until CI passes and the GitHub Release is published. The last independently user-tested editor snapshot is preserved in branch [`stable-editor-2026-11-06`](https://github.com/KSharudilov/NoraShot/tree/stable-editor-2026-11-06).
 
 ## Features
 
@@ -18,7 +18,7 @@ NoraShot — Windows screenshot utility written in Python using PySide6. Capture
 - Detailed rotating logs for diagnosis.
 - **Experimental:** private S3-compatible upload with temporary signed HTTPS links; configurable per-user S3 storage and credentials stored outside YAML.
 
-**Not implemented yet:** a managed NoraShot upload server, a window picker for selecting a non-active application, Windows autostart, and a tested production EXE/installer build. The S3 integration is new and **has not yet been verified against a live Selectel bucket on Windows**.
+**Not implemented yet:** a managed NoraShot upload server, a picker for non-active application windows, Windows autostart, a signed installer, and automatic updates. S3 upload and opening a presigned Selectel URL have been tested manually on Windows; the release candidate still needs CI and portable EXE validation.
 
 ## Run from source on Windows
 
@@ -90,9 +90,29 @@ Some configuration options are scaffolded but not yet wired into behavior (e.g.,
 
 Default link expiration is **24 hours** (configurable from 1 to 168 hours). This does **not** delete the uploaded file. Configure an **S3 bucket lifecycle rule** for automatic cleanup if desired. Anyone possessing an unexpired presigned URL can view the uploaded image. A new URL can be issued only while the application has credentials; no long-lived public link is generated.
 
-The current client sends the entire PNG in one upload. Network errors produce a user-friendly message and a log entry without keys or signed URL. There is no managed backend or centralized account storage yet; the future server adapter can implement the same `StorageProvider` contract.
+The current client sends the entire PNG in one upload. S3 failures are categorized (TLS, DNS/endpoint, timeout, S3 permissions) with sanitized logs: signed URLs and keys must not be logged. The Settings window includes a background **Проверить подключение** operation. A 403 from a read-only bucket check does **not** prove uploads will fail: restricted credentials may allow PutObject but prohibit HeadBucket. There is no managed backend or centralized account storage yet; the future server adapter can implement the same `StorageProvider` contract.
 
 Security caveat: **redact sensitive information before clicking Share**. Access to S3 keys from the Windows user session and a compromised machine remain security risks. The local upload credential is scoped by S3 permissions, not by the NoraShot application itself.
+
+## Automated tests and portable Windows EXE
+
+All pushes to `main` and pull requests run [Test and build NoraShot](.github/workflows/tests.yml):
+Python 3.11 and 3.13 on Windows/Linux, offline S3-mock tests, offscreen Qt editor regressions, source package smoke, and a PyInstaller Windows EXE. When all checks pass, the EXE and its SHA-256 checksum are available as the `NoraShot-Windows-portable` Actions artifact (retained 30 days).
+
+To test and build locally on Windows:
+
+```powershell
+python -m pip install -e ".[dev]"
+python -m pytest -q
+python -m norashot --self-test
+.\\scripts\\build_exe.ps1 -SkipInstall
+```
+
+Output is `dist/NoraShot.exe` and `dist/NoraShot.exe.sha256`. The EXE is portable and does not require Python on the target computer. It is not yet digitally signed.
+
+### Publishing a formal release
+
+After CI tests pass and a human verifies the EXE on Windows, open [GitHub Actions](https://github.com/KSharudilov/NoraShot/actions/workflows/release.yml), choose **Run workflow** from `main`, use tag `v0.2.0`, and check **Confirm publication**. The release workflow repeats the Windows tests, builds and smoke-tests the EXE, and creates a GitHub Release including the binary, checksum and [release notes](RELEASE_NOTES.md). It refuses a version mismatch or any failed check. Do not click publish before the portable binary has been tested.
 
 ## Logs
 
@@ -136,9 +156,9 @@ src/norashot/
 
 ## Roadmap
 
-1. Validate private S3 sharing on Windows/Selectel; improve connectivity diagnostics, retries and credential management.
-2. Expand the Settings UI and add explicit connectivity checks.
-3. Automated UI tests, reproducible Windows EXE/installer packaging, and startup support.
+1. Verify release candidate EXE on Windows, finish CI and publish v0.2.0.
+2. Improve retry policies, credential rotation and S3 provider integration tests.
+3. Build a signed Windows installer, autostart support and automatic updates.
 4. Optional picker for capturing a chosen application/window.
 5. Optional managed NoraShot server provider with revocable, longer-lived links.
 
