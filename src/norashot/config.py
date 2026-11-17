@@ -55,6 +55,8 @@ class UploadConfig:
     bucket: str = ""
     public_base_url: str = ""
     prefix_template: str = "%Y/%m/%d"
+    region: str = "ru-1"
+    link_ttl_seconds: int = 86400
 
 
 @dataclass
