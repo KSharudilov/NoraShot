@@ -54,7 +54,7 @@ class NoraShotApplication:
         logger.info("NoraShot shutdown completed")
 
     def open_editor(self, image) -> None:
-        editor = ScreenshotEditor(image=image, save_config=self.config.save)
+        editor = ScreenshotEditor(image=image, save_config=self.config.save, upload_config=self.config.upload)
         editor.closed.connect(lambda: self.remove_editor(editor))
         self.editors.append(editor)
         editor.show()
