@@ -1,0 +1,67 @@
+name: Publish NoraShot Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag (must match project version)"
+        required: true
+        default: "v0.2.0"
+        type: string
+      confirm:
+        description: "Confirm publication of the release"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main' && inputs.confirm
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Confirm tagged version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.version }}
+        run: |
+          $expected = (python -c "from norashot import __version__; print(__version__)").Trim()
+          if ($env:RELEASE_TAG -ne "v$expected") { throw "Release tag mismatch: expected v$expected" }
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run tests and basic smoke checks
+        shell: pwsh
+        run: |
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "pip check failed" }
+          python -m compileall -q src tests
+          if ($LASTEXITCODE -ne 0) { throw "compileall failed" }
+          python -m pytest -q
+          if ($LASTEXITCODE -ne 0) { throw "pytest failed" }
+          python -m norashot --self-test
+          if ($LASTEXITCODE -ne 0) { throw "source smoke check failed" }
+      - name: Build Windows EXE
+        shell: pwsh
+        run: ./scripts/build_exe.ps1 -SkipInstall
+      - name: Smoke test portable Windows EXE
+        shell: pwsh
+        run: |
+          $proc = Start-Process -FilePath "./dist/NoraShot.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "EXE self-test failed: $($proc.ExitCode)" }
+      - name: Create GitHub Release from verified commit
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.version }}
+          TARGET_SHA: ${{ github.sha }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create $env:RELEASE_TAG ./dist/NoraShot.exe ./dist/NoraShot.exe.sha256 --target $env:TARGET_SHA --title "NoraShot $env:RELEASE_TAG" --notes-file RELEASE_NOTES.md --verify-tag=false
