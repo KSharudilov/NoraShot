@@ -8,7 +8,8 @@ def main() -> None:
     from norashot import __version__
 
     if "--version" in sys.argv:
-        print(f"NoraShot {__version__}")
+        if sys.stdout is not None:
+            print(f"NoraShot {__version__}")
         return
 
     if "--self-test" in sys.argv:
@@ -29,7 +30,8 @@ def main() -> None:
         assert Image.new("RGB", (2, 2)).size == (2, 2)
         assert callable(classify_s3_error)
         assert callable(app.main)
-        print(f"NoraShot {__version__}: self-test OK")
+        if sys.stdout is not None:
+            print(f"NoraShot {__version__}: self-test OK")
         return
 
     from norashot.app import main as run_app
