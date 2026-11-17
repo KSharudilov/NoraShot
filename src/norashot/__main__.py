@@ -29,7 +29,7 @@ def main() -> None:
 
         # Exercise the actual startup logging path in a frozen --windowed build.
         # PyInstaller runw.exe provides sys.stderr=None (no attached terminal).
-        log_file = setup_logging("INFO", 1)
+        log_file = setup_logging("INFO", 30)
         logger.info("Portable EXE self-test | log_file={}", log_file)
         logger.complete()
         assert log_file.is_file()
