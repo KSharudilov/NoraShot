@@ -78,7 +78,7 @@ logs:
 
 The S3 upload section now controls the **Share** button. Endpoint must use HTTPS; region and bucket must match your S3 provider. Existing configs receive defaults for new keys at runtime; save settings to persist them. Do not put access keys or secret keys into this YAML file.
 
-Some configuration options are scaffolded but not yet wired into behavior (e.g., `app.start_with_windows`, `capture.open_editor_after_capture`, clipboard preferences, and `logs.retention_days`). The current log retention is hard-coded to 30 days.
+Some configuration options are scaffolded but not yet wired into behavior (e.g., `app.start_with_windows`, `capture.open_editor_after_capture`, and clipboard preferences). The log retention defaults to 30 days and is configurable through `logs.retention_days`.
 
 ## Private S3 sharing (experimental)
 
@@ -124,7 +124,7 @@ The actual current Windows log file location is:
 
 For example: `C:\Users\<username>\AppData\Local\NoraShot\NoraShot\Logs\norashot.log`.
 
-The log is rotated at 10 MB, archived with ZIP compression, and retained for 30 days by the current implementation. Log paths, capture events, and annotation actions are recorded; credentials should never be logged.
+The log is rotated at 10 MB, archived with ZIP compression, and retained according to `logs.retention_days` (default 30). Traceback introspection of local variables is disabled to reduce the risk of leaking secrets. Log paths, capture events, and annotation actions are recorded; credentials and presigned URLs must never be logged.
 
 ## Code layout
 
@@ -156,7 +156,7 @@ src/norashot/
 
 ## Roadmap
 
-1. Verify release candidate EXE on Windows, finish CI and publish v0.2.0.
+1. Verify release candidate EXE on Windows, finish CI and publish v0.2.0 (see [release checklist](docs/RELEASE_CHECKLIST.md)).
 2. Improve retry policies, credential rotation and S3 provider integration tests.
 3. Build a signed Windows installer, autostart support and automatic updates.
 4. Optional picker for capturing a chosen application/window.
