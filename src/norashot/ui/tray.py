@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from norashot import __version__
 from norashot.config import NoraShotConfig
 from norashot.paths import get_default_screenshot_dir
 from norashot.ui.settings_window import SettingsWindow
@@ -234,7 +235,7 @@ class TrayController(QObject):
         os.startfile(str(folder))
 
     def show_about(self) -> None:
-        QMessageBox.information(None, "О программе NoraShot", "NoraShot 0.1.0-dev")
+        QMessageBox.information(None, "О программе NoraShot", f"NoraShot {__version__}")
 
     def on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         logger.info("Tray activated | reason=" + str(reason))
