@@ -17,7 +17,7 @@ from norashot.ui.tray import TrayController
 class NoraShotApplication:
     def __init__(self) -> None:
         self.config = load_config()
-        setup_logging(self.config.logs.level)
+        setup_logging(self.config.logs.level, self.config.logs.retention_days)
         self.qt_app = QApplication(sys.argv)
         self.qt_app.setQuitOnLastWindowClosed(False)
         self.capture = ScreenshotService()
