@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "norashot"
-version = "0.1.0"
+version = "0.2.0"
 description = "Windows screenshot tool with editor, clipboard, local save and private upload support."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,6 +20,7 @@ dependencies = [
     "loguru>=0.7.0",
     "platformdirs>=4.0.0",
     "boto3>=1.35.0",
+    "certifi>=2025.1.31",
     "keyring>=25.0.0",
 ]
 
