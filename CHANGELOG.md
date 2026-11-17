@@ -1,11 +1,23 @@
 # Changelog
 
+## 0.2.0 — release candidate (2026-11-17)
+
+- Prepared portable Windows EXE build with PyInstaller, SHA-256 checksum and smoke test.
+- Added GitHub Actions test matrix for Python 3.11/3.13 on Windows/Linux.
+- Added offscreen Qt screenshot/annotation regression tests, S3 diagnostic tests and connection checks.
+- Added S3 "Проверить подключение" action and sanitized TLS/API/network error classifications.
+- Selected `certifi` CA bundle for S3 TLS verification, with `AWS_CA_BUNDLE` override for trusted custom CA.
+- Improved Loguru security by disabling sensitive local-variable diagnostics and honoring retention settings.
+- Updated displayed app version to 0.2.0 and completed the MIT license.
+- Added guarded, manual GitHub Release workflow, release notes, and gitignore.
+- This is a **release candidate**, not a published stable binary until CI and Windows user acceptance pass.
+
 ## Next milestones (planned)
 
 - Choose a specific application/window from a list and capture it even if it is not foreground.
 - Prefer distinct windows over process names when applications have multiple windows.
 - Add user-facing window titles and preview to the window picker.
-- Validate S3-compatible sharing against a real provider, and add connection testing.
+- Verify S3 connectivity checker and portable Windows EXE on a real Windows machine before release.
 - Regression-test multi-monitor capture, DPI scaling and screen coordinate mapping.
 
 ## Unreleased (after 0.1.0 MVP)
