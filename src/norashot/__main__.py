@@ -24,7 +24,15 @@ def main() -> None:
         from norashot.core.sharing.diagnostics import classify_s3_error
         from norashot.ui.editor import ScreenshotEditor
         from norashot import app
+        from norashot.logging_setup import setup_logging
+        from loguru import logger
 
+        # Exercise the actual startup logging path in a frozen --windowed build.
+        # PyInstaller runw.exe provides sys.stderr=None (no attached terminal).
+        log_file = setup_logging("INFO", 1)
+        logger.info("Portable EXE self-test | log_file={}", log_file)
+        logger.complete()
+        assert log_file.is_file()
         assert certifi.where()
         assert QImage(2, 2, QImage.Format.Format_RGB32).width() == 2
         assert Image.new("RGB", (2, 2)).size == (2, 2)
