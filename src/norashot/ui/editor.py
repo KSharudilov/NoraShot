@@ -23,8 +23,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from norashot.config import SaveConfig
-from norashot.core.clipboard import copy_image_to_clipboard
+from norashot.config import SaveConfig, UploadConfig
+from norashot.core.clipboard import copy_image_to_clipboard, copy_text_to_clipboard
+from norashot.core.sharing.base import ShareResult
+from norashot.core.sharing.worker import ShareWorker
 from norashot.core.storage import save_image
 from norashot.ui.graphics_editor import ScreenshotCanvas
 
@@ -32,9 +34,12 @@ from norashot.ui.graphics_editor import ScreenshotCanvas
 class ScreenshotEditor(QDialog):
     closed = Signal()
 
-    def __init__(self, image: Image.Image, save_config: SaveConfig, parent: QWidget | None = None) -> None:
+    def __init__(self, image: Image.Image, save_config: SaveConfig, upload_config: UploadConfig | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.save_config = save_config
+        self.upload_config = upload_config or UploadConfig()
+        self.share_worker: ShareWorker | None = None
+        self.share_result: ShareResult | None = None
         self.saved_path: Path | None = None
 
         self.setWindowTitle("NoraShot")
@@ -153,8 +158,9 @@ class ScreenshotEditor(QDialog):
         for button in (copy_button, save_button, share_button, close_button):
             button.setMinimumHeight(34)
 
-        share_button.setEnabled(False)
-        share_button.setToolTip("Загрузка в облако будет добавлена позже")
+        self.share_button = share_button
+        share_button.setToolTip("Загрузить PNG в приватный S3 и скопировать временную ссылку")
+        share_button.clicked.connect(self.share_to_s3)
         copy_button.clicked.connect(self.copy_to_clipboard)
         save_button.clicked.connect(self.save_to_disk)
         close_button.clicked.connect(self.close)
@@ -231,6 +237,59 @@ class ScreenshotEditor(QDialog):
             logger.exception("Failed to save screenshot from object editor")
             QMessageBox.critical(self, "NoraShot", "Не удалось сохранить скриншот.")
 
+    def share_to_s3(self) -> None:
+        if self.share_worker is not None:
+            logger.warning("Share requested while another upload is active")
+            return
+        if not self.upload_config.enabled or not self.upload_config.bucket:
+            QMessageBox.information(
+                self, "NoraShot",
+                "Сначала включите загрузку и задайте S3 в меню «Настройки» трея.",
+            )
+            return
+        try:
+            # Render the Qt scene only in the GUI thread. Network I/O runs separately.
+            image = self.current_image()
+        except Exception:
+            logger.exception("Cannot prepare screenshot for sharing")
+            QMessageBox.critical(self, "NoraShot", "Не удалось подготовить скриншот.")
+            return
+
+        self.share_result = None
+        self.share_button.setEnabled(False)
+        self.share_button.setText("Загрузка…")
+        self.share_worker = ShareWorker(image, self.upload_config, parent=self)
+        self.share_worker.completed.connect(self._share_completed)
+        self.share_worker.failed.connect(self._share_failed)
+        self.share_worker.finished.connect(self._share_finished)
+        self.share_worker.start()
+        logger.info("Screenshot sharing started | width={} | height={}", image.width, image.height)
+
+    def _share_completed(self, result: ShareResult) -> None:
+        self.share_result = result
+        copy_text_to_clipboard(result.url)
+        logger.info(
+            "Screenshot link copied to clipboard | object_key={} | expires_at={}",
+            result.object_key, result.expires_at.isoformat(),
+        )
+        self.share_button.setText("Ссылка скопирована")
+
+    def _share_failed(self, message: str) -> None:
+        logger.warning("Screenshot sharing failed")
+        QMessageBox.warning(self, "NoraShot — загрузка", message)
+
+    def _share_finished(self) -> None:
+        worker = self.share_worker
+        self.share_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        self.share_button.setEnabled(True)
+        if self.share_result is not None:
+            logger.info("Sharing finished successfully, closing editor")
+            self.close()
+        else:
+            self.share_button.setText("Поделиться")
+
     def open_saved_file_folder(self) -> None:
         if self.saved_path is None:
             return
@@ -244,5 +303,12 @@ class ScreenshotEditor(QDialog):
             logger.exception("Failed to open saved screenshot folder")
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self.share_worker is not None and self.share_worker.isRunning():
+            logger.warning("Editor close deferred because S3 upload is active")
+            QMessageBox.information(
+                self, "NoraShot", "Загрузка в S3 ещё выполняется. Дождитесь её завершения."
+            )
+            event.ignore()
+            return
         self.closed.emit()
         super().closeEvent(event)
