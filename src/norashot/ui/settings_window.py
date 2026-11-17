@@ -7,9 +7,12 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
+from dataclasses import replace as dataclass_replace
+
 from norashot.config import NoraShotConfig, save_config
 from norashot.core.sharing.base import SharingError
 from norashot.core.sharing.credentials import save_credentials
+from norashot.core.sharing.worker import S3CheckWorker
 
 
 class SettingsWindow(QDialog):
@@ -22,6 +25,7 @@ class SettingsWindow(QDialog):
         self.config = config
         self.setWindowTitle("NoraShot — Хранилище")
         self.setMinimumWidth(510)
+        self.check_worker: S3CheckWorker | None = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Публикация скриншотов в собственном S3-совместимом хранилище"))
@@ -69,12 +73,69 @@ class SettingsWindow(QDialog):
         save_keys_button = QPushButton("Сохранить ключи")
         save_keys_button.clicked.connect(self.store_keys)
         buttons.addWidget(save_keys_button)
+        self.check_button = QPushButton("Проверить подключение")
+        self.check_button.clicked.connect(self.check_connection)
+        buttons.addWidget(self.check_button)
         buttons.addStretch(1)
 
         save_button = QPushButton("Сохранить настройки")
         save_button.clicked.connect(self.save)
         buttons.addWidget(save_button)
         layout.addLayout(buttons)
+
+    def _draft_upload_config(self):
+        return dataclass_replace(
+            self.config.upload,
+            provider="s3",
+            enabled=True,
+            endpoint=self.endpoint.text().strip().rstrip("/"),
+            bucket=self.bucket.text().strip(),
+            region=self.region.text().strip(),
+            prefix_template=self.prefix.text().strip(),
+            link_ttl_seconds=self.ttl.value() * 3600,
+        )
+
+    def check_connection(self) -> None:
+        if self.check_worker is not None:
+            return
+        self.check_button.setText("Проверка…")
+        self.check_button.setEnabled(False)
+        self.check_worker = S3CheckWorker(self._draft_upload_config(), parent=self)
+        self.check_worker.completed.connect(self._check_completed)
+        self.check_worker.failed.connect(self._check_failed)
+        self.check_worker.finished.connect(self._check_finished)
+        self.check_worker.start()
+        logger.info("S3 connectivity check requested from settings")
+
+    def _check_completed(self, result) -> None:
+        if result.category == "ok":
+            QMessageBox.information(self, "NoraShot — S3", result.message)
+        else:
+            QMessageBox.warning(self, "NoraShot — S3", result.message)
+
+    def _check_failed(self, message: str) -> None:
+        QMessageBox.warning(self, "NoraShot — S3", message)
+
+    def _check_finished(self) -> None:
+        worker = self.check_worker
+        self.check_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        self.check_button.setText("Проверить подключение")
+        self.check_button.setEnabled(True)
+
+    def reject(self) -> None:
+        if self.check_worker is not None and self.check_worker.isRunning():
+            QMessageBox.information(self, "NoraShot", "Дождитесь завершения проверки S3.")
+            return
+        super().reject()
+
+    def closeEvent(self, event) -> None:
+        if self.check_worker is not None and self.check_worker.isRunning():
+            event.ignore()
+            QMessageBox.information(self, "NoraShot", "Дождитесь завершения проверки S3.")
+            return
+        super().closeEvent(event)
 
     def store_keys(self) -> None:
         try:
@@ -93,6 +154,9 @@ class SettingsWindow(QDialog):
         QMessageBox.information(self, "NoraShot", "Ключи S3 сохранены в Windows.")
 
     def save(self) -> None:
+        if self.check_worker is not None and self.check_worker.isRunning():
+            QMessageBox.information(self, "NoraShot", "Дождитесь завершения проверки S3.")
+            return
         endpoint = self.endpoint.text().strip().rstrip("/")
         bucket = self.bucket.text().strip()
         if self.enabled.isChecked():
