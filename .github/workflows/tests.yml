@@ -1,23 +1,64 @@
-name: Python tests
+name: Test and build NoraShot
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  tests:
+    name: Tests (${{ matrix.os }} / Py ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.13"]
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-      - name: Install package and test dependencies
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
         run: python -m pip install -e ".[dev]"
-      - name: Compile Python sources
+      - name: Dependency integrity
+        run: python -m pip check
+      - name: Compile Python modules
         run: python -m compileall -q src tests
-      - name: Run unit tests
+      - name: Unit tests
         run: python -m pytest -q
+      - name: Package smoke test
+        run: python -m norashot --self-test
+
+  windows-exe:
+    name: Portable Windows EXE
+    needs: tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build EXE
+        shell: pwsh
+        run: ./scripts/build_exe.ps1
+      - name: Smoke test packaged EXE
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "./dist/NoraShot.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NoraShot.exe smoke test failed with exit code $($process.ExitCode)" }
+      - name: Upload Windows build and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: NoraShot-Windows-portable
+          path: |
+            dist/NoraShot.exe
+            dist/NoraShot.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
