@@ -5,11 +5,16 @@
 - Choose a specific application/window from a list and capture it even if it is not foreground.
 - Prefer distinct windows over process names when applications have multiple windows.
 - Add user-facing window titles and preview to the window picker.
-- Implement S3-compatible sharing with secure credentials and expiring links.
+- Validate S3-compatible sharing against a real provider, and add connection testing.
 - Regression-test multi-monitor capture, DPI scaling and screen coordinate mapping.
 
 ## Unreleased (after 0.1.0 MVP)
 
+- Added experimental private S3 sharing subsystem: provider interface, upload manager, S3 backend, Windows keyring credentials, signed temporary URLs and background worker.
+- Enabled Share in editor with clipboard-link delivery and recoverable upload errors.
+- Added S3 storage settings and link expiry controls; future managed server stays unselectable.
+- Added isolated S3 unit tests and GitHub Actions Python test workflow.
+- Updated setup instructions for S3 and its privacy limitations.
 - Fixed Loguru placeholders in configuration logging.
 - Updated README with tested editor features, real Windows configuration/logging paths and planned secure S3 sharing.
 - Text font family, size and bold controls with undo/redo per text object.
