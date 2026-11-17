@@ -64,4 +64,4 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create $env:RELEASE_TAG ./dist/NoraShot.exe ./dist/NoraShot.exe.sha256 --target $env:TARGET_SHA --title "NoraShot $env:RELEASE_TAG" --notes-file RELEASE_NOTES.md --verify-tag=false
+          gh release create $env:RELEASE_TAG ./dist/NoraShot.exe ./dist/NoraShot.exe.sha256 --target $env:TARGET_SHA --title "NoraShot $env:RELEASE_TAG" --notes-file RELEASE_NOTES.md
