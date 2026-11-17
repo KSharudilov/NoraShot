@@ -11,11 +11,15 @@ def setup_logging(level: str = "INFO", retention_days: int = 30) -> Path:
     log_file = log_dir / "norashot.log"
 
     logger.remove()
-    logger.add(
-        sys.stderr,
-        level=level,
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message}",
-    )
+    # PyInstaller --windowed (runw.exe) has no console: sys.stderr is None.
+    # File logging must work regardless of whether a terminal is attached.
+    if sys.stderr is not None:
+        logger.add(
+            sys.stderr,
+            level=level,
+            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message}",
+            diagnose=False,
+        )
     logger.add(
         log_file,
         level=level,
